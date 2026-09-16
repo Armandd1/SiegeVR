@@ -1,0 +1,269 @@
+:root {
+  --primary: #6366f1;
+  --primary-glow: rgba(99, 102, 241, 0.4);
+  --accent: #06b6d4;
+  --accent-glow: rgba(6, 182, 212, 0.4);
+  --portal-color: #ec4899;
+  --portal-glow: rgba(236, 72, 153, 0.5);
+  --bg-dark: #0f172a;
+  --text: #f8fafc;
+  --font: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body, html {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-dark);
+  font-family: var(--font);
+  color: var(--text);
+}
+
+#canvas-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* Glassmorphism UI HUD */
+#ui-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1.5rem;
+}
+
+.hud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.logo-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0.6rem 1.2rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.pulse-dot {
+  width: 10px;
+  height: 10px;
+  background-color: #22c55e;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #22c55e;
+  animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  background: linear-gradient(135deg, #fff 0%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.stats-badge {
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0.6rem 1.2rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.stats-badge .label {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+#score-display {
+  color: #38bdf8;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.slingshot-hint {
+  align-self: center;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(8px);
+  padding: 0.6rem 1.4rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  animation: bounce 2s infinite ease-in-out;
+  transition: opacity 0.3s ease;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.hud-footer {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+.btn {
+  pointer-events: auto;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.8rem 1.4rem;
+  border-radius: 14px;
+  font-family: var(--font);
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fff;
+  background: rgba(15, 23, 42, 0.75);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary:hover {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: var(--primary);
+  box-shadow: 0 0 20px var(--primary-glow);
+}
+
+.btn-secondary:hover {
+  background: rgba(236, 72, 153, 0.3);
+  border-color: var(--portal-color);
+  box-shadow: 0 0 20px var(--portal-glow);
+}
+
+.btn-accent:hover {
+  background: rgba(6, 182, 212, 0.3);
+  border-color: var(--accent);
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+
+.btn.active-portal {
+  background: rgba(236, 72, 153, 0.4);
+  border-color: var(--portal-color);
+  box-shadow: 0 0 25px var(--portal-glow);
+}
+
+@media (max-width: 640px) {
+  #ui-overlay {
+    padding: 1rem;
+  }
+  .title {
+    font-size: 0.85rem;
+  }
+  .slingshot-hint {
+    font-size: 0.8rem;
+    text-align: center;
+  }
+  .btn {
+    padding: 0.65rem 1rem;
+    font-size: 0.85rem;
+  }
+}
+
+/* Modal Stílusok */
+#marker-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.3s ease;
+  pointer-events: auto;
+}
+
+#marker-modal.modal-hidden {
+  display: none;
+}
+
+.modal-content {
+  background: #1e293b;
+  padding: 2rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  text-align: center;
+  max-width: 90%;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+.modal-content h3 {
+  font-size: 1.4rem;
+  margin-bottom: 0.5rem;
+  color: #38bdf8;
+}
+
+.modal-content p {
+  color: #94a3b8;
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+}
+
+.marker-preview-img {
+  max-width: 280px;
+  width: 100%;
+  border-radius: 12px;
+  border: 2px solid #6366f1;
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+}
+

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>AR Asztali Ostrom & Dimenzió Portál</title>
+  <link rel="stylesheet" href="./src/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  <!-- MindAR Three.js WebAR Könyvtár -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+</head>
+<body>
+  <!-- 3D Canvas -->
+  <div id="canvas-container"></div>
+
+  <!-- Modern Glassmorphism UI HUD -->
+  <div id="ui-overlay">
+    <header class="hud-header">
+      <div class="logo-badge">
+        <span class="pulse-dot"></span>
+        <h1 class="title">AR ASZTALI OSTROM</h1>
+      </div>
+      <div class="stats-badge">
+        <span class="label">Pontszám:</span>
+        <span id="score-display">0</span>
+      </div>
+    </header>
+
+    <!-- Slingshot / Aim Helper Indicator -->
+    <div id="slingshot-hint" class="slingshot-hint">
+      🎯 Húzd hátra a golyót az asztalon és engedd el a lövéshez!
+    </div>
+
+    <!-- Alsó vezérlősáv -->
+    <footer class="hud-footer">
+      <button id="btn-portal" class="btn btn-secondary" title="Dimenziókapu ki/bekapcsolása">
+        <span class="btn-icon">🌀</span>
+        <span class="btn-text">Portál: KI</span>
+      </button>
+
+      <button id="btn-reset" class="btn btn-primary" title="Vár újraépítése">
+        <span class="btn-icon">🏰</span>
+        <span class="btn-text">Újraépítés</span>
+      </button>
+
+      <button id="btn-show-marker" class="btn btn-accent" title="Célkép / Marker megtekintése">
+        <span class="btn-icon">👁️</span>
+        <span class="btn-text">AR Kártya</span>
+      </button>
+    </footer>
+
+    <!-- Marker előnézeti popup -->
+    <div id="marker-modal" class="modal-hidden">
+      <div class="modal-content">
+        <h3>AR Célkép (Marker)</h3>
+        <p>Mutasd fel ezt a képet a kamerának, vagy nyisd meg a telefonodon!</p>
+        <img src="/card.png" alt="AR Target Card" class="marker-preview-img" />
+        <button id="btn-close-marker" class="btn btn-primary" style="margin-top: 1rem;">Bezárás</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

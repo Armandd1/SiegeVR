@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <title>MindAR Célfájl (.mind) Generáló</title>
+  <!-- MindAR Image Compiler Script a böngészőben -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #0f172a;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    #status {
+      font-size: 1.2rem;
+      margin-top: 1rem;
+      color: #38bdf8;
+    }
+    progress {
+      width: 300px;
+      height: 20px;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <h2>AR Célkép Feature Pontok Számítása...</h2>
+  <img id="source-img" src="/target.jpg" style="max-width: 250px; border-radius: 12px; border: 2px solid #38bdf8;" />
+  <progress id="progress" value="0" max="100"></progress>
+  <div id="status">Kép betöltése...</div>
+
+  <script>
+    async function compile() {
+      const img = document.getElementById('source-img');
+      const status = document.getElementById('status');
+      const progress = document.getElementById('progress');
+
+      await new Promise(resolve => {
+        if (img.complete) resolve();
+        else img.onload = resolve;
+      });
+
+      status.innerText = "Compiler inicializálása...";
+      const compiler = new window.MINDAR.IMAGE.Compiler();
+
+      status.innerText = "Feature pontok generálása folyamatban...";
+      const dataList = await compiler.compileImageTargets([img], (p) => {
+        progress.value = Math.round(p);
+        status.innerText = `Feldolgozás: ${Math.round(p)}%`;
+      });
+
+      status.innerText = "Exportálás .mind formátumba...";
+      const exportedBuffer = await compiler.exportData();
+
+      // Automatikus letöltés indítása
+      const blob = new Blob([exportedBuffer]);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'targets.mind';
+      a.click();
+
+      status.innerText = "✅ targets.mind sikeresen elkészült és letöltve! Másold a public/ mappába.";
+    }
+
+    window.onload = compile;
+  </script>
+</body>
+</html>
