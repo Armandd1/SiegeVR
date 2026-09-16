@@ -3,7 +3,8 @@ import { PhysicsWorld } from './physics.js';
 import { CastleBuilder } from './castle.js';
 import { Slingshot } from './slingshot.js';
 import { ParticleSystem, SoundEffects } from './effects.js';
-import { MindARThree } from '/mindar-image-three.prod.js';
+import { DimensionPortal } from './portal.js';
+import { MindARThree } from './vendor/mindar-image-three.prod.js';
 
 class ARApp {
   constructor() {
