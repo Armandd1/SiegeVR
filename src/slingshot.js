@@ -155,8 +155,7 @@ export class Slingshot {
   }
 
   bindEvents() {
-    let startY = 0;
-    let startX = 0;
+    let startScreenPos = { x: 0, y: 0 };
 
     const getPos = (e) => {
       const cx = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
@@ -169,27 +168,39 @@ export class Slingshot {
       if (!this.group.visible) return;
 
       const p = getPos(e);
-      startX = p.x;
-      startY = p.y;
+      const rect = this.domElement.getBoundingClientRect();
+      const ndc = {
+        x: ((p.x - rect.left) / rect.width) * 2 - 1,
+        y: -((p.y - rect.top) / rect.height) * 2 + 1
+      };
 
-      // Érintés vizsgálat
-      this.isAiming = true;
-      this.trajectoryLine.visible = true;
-      this.hitMarker.visible = true;
+      this.raycaster.setFromCamera(ndc, this.camera);
+      // Megvizsgáljuk, hogy az ujj a csúzli golyóját vagy a célzó karikát érinti-e
+      const intersects = this.raycaster.intersectObjects([this.aimBall, this.pullHelperRing, ...this.modelGroup.children]);
+
+      // Ha rábök a csúzlira vagy a képernyő alsó felére a csúzli közelében
+      if (intersects.length > 0 || ndc.y < 0.3) {
+        this.isAiming = true;
+        startScreenPos = { x: p.x, y: p.y };
+        this.trajectoryLine.visible = true;
+        this.hitMarker.visible = true;
+      }
     };
 
     const onMove = (e) => {
       if (!this.isAiming) return;
       const p = getPos(e);
 
-      // Képernyő húzás: deltaY (hátrahúzás), deltaX (oldalra célzás)
-      const dy = (p.y - startY) / window.innerHeight;
-      const dx = (p.x - startX) / window.innerWidth;
+      // Képernyő elmozdulás
+      const dx = (p.x - startScreenPos.x) / window.innerWidth;
+      const dy = (p.y - startScreenPos.y) / window.innerHeight;
 
-      // Helyi csúzli koordinátában a +Z a hátrahúzás iránya (a vár -Z-ben van!)
-      const pullZ = Math.max(0, Math.min(0.25, dy * 0.7)); // max 25 cm húzás
-      const pullX = Math.max(-0.1, Math.min(0.1, dx * 0.3));
-      const pullY = -pullZ * 0.2; // kicsit lefelé feszül a gumi
+      // Szabad 3D célzás:
+      // dy > 0: hátrahúzzuk a golyót maga felé (+Z) és lefelé (-Y a magasabb röppályáért)
+      // dx: oldalra feszítjük a csúzlit (-X / +X)
+      const pullZ = Math.max(0.01, Math.min(0.20, dy * 0.5)); // 20 cm max feszítés
+      const pullX = Math.max(-0.12, Math.min(0.12, dx * 0.35));
+      const pullY = Math.max(-0.08, Math.min(0.08, -dy * 0.25));
 
       this.aimBall.position.set(
         this.restLocalPos.x + pullX,
@@ -212,7 +223,7 @@ export class Slingshot {
         this.launch(localPull);
       }
 
-      // Visszaugrik a golyó a csúzlira
+      // Visszaáll nyugalmi helyzetbe
       this.aimBall.position.copy(this.restLocalPos);
       this.updateBands();
     };
@@ -227,23 +238,20 @@ export class Slingshot {
   }
 
   updateTrajectory(pullX, pullY, pullZ) {
-    // Kezdőpont a világban
     const worldStart = this.aimBall.getWorldPosition(new THREE.Vector3());
 
-    // Kilövési sebességvektor:
-    // A csúzli helyi terében a -Z tengely mutat a vár felé!
-    const force = Math.max(0.5, pullZ) * 26.0;
+    // Finomhangolt, filmszerű sebesség (nem túl gyors, szépen követhető ív)
+    const forwardForce = Math.max(1.0, pullZ * 35.0); // 3-7 m/s sebesség
     const localVel = new THREE.Vector3(
-      -pullX * 20.0,
-      pullZ * 8.0 + 1.2, // szép emelkedő ív
-      -force
+      -pullX * 22.0,      // oldalirányú korrekció (ellenkező irányba húzás)
+      -pullY * 18.0 + 1.2, // magassági szög finomhangolása
+      -forwardForce
     );
 
-    // Átforgatjuk a sebességet a csúzli világforgásával
     const worldVel = localVel.clone().applyQuaternion(this.group.quaternion);
 
     const positions = this.trajectoryLine.geometry.attributes.position.array;
-    const dt = 0.025;
+    const dt = 0.035;
     const g = -9.82;
 
     let curr = worldStart.clone();
@@ -263,18 +271,17 @@ export class Slingshot {
     this.trajectoryLine.geometry.attributes.position.needsUpdate = true;
     this.trajectoryLine.computeLineDistances();
 
-    // Célkereszt pozícionálása az ív végéhez közel
     this.hitMarker.position.copy(curr);
     this.hitMarker.lookAt(this.camera.position);
   }
 
   launch(localPull) {
     const worldStart = this.aimBall.getWorldPosition(new THREE.Vector3());
-    const force = Math.max(0.5, localPull.z) * 26.0;
+    const forwardForce = Math.max(1.0, localPull.z * 35.0);
     const localVel = new THREE.Vector3(
-      -localPull.x * 20.0,
-      localPull.z * 8.0 + 1.2,
-      -force
+      -localPull.x * 22.0,
+      -localPull.y * 18.0 + 1.2,
+      -forwardForce
     );
     const worldVel = localVel.clone().applyQuaternion(this.group.quaternion);
 
@@ -283,10 +290,10 @@ export class Slingshot {
     mesh.position.copy(worldStart);
     this.scene.add(mesh);
 
-    const body = this.physics.addSphere(mesh, worldStart, this.radius, 0.8);
+    const body = this.physics.addSphere(mesh, worldStart, this.radius, 0.6);
     body.velocity.set(worldVel.x, worldVel.y, worldVel.z);
 
-    // Felébresztjük a vár blokkjait, hogy azonnal reagáljanak a fizikai becsapódásra
+    // Felébresztjük a vár blokkjait, hogy reagáljanak az ütközésre
     this.physics.wakeUpAllBlocks();
 
     this.projectiles.push({ mesh, body, createdAt: Date.now() });
