@@ -19,23 +19,24 @@ class ARApp {
     this.hint.innerText = "⏳ Kamera és AR inicializálása...";
 
     try {
-      // 1. Dinamikus ESM MindAR importálás vagy window ellenőrzés
-      let MindARThreeClass;
-      if (window.MINDAR && window.MINDAR.IMAGE) {
-        MindARThreeClass = window.MINDAR.IMAGE.MindARThree;
-      } else {
-        const mod = await import('https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js');
-        MindARThreeClass = window.MINDAR?.IMAGE?.MindARThree || mod.MindARThree;
+      // A MindAR bundle-nek szüksége van a globális THREE objektumra
+      window.THREE = THREE;
+
+      // Megvárjuk, amíg a MindAR globálisan elérhető
+      while (!window.MINDAR || !window.MINDAR.IMAGE) {
+        await new Promise(r => setTimeout(r, 100));
       }
 
+      const MindARThreeClass = window.MINDAR.IMAGE.MindARThree;
+
       if (!MindARThreeClass) {
-        throw new Error("MindAR modul nem tölthető be");
+        throw new Error("MindAR Three.js osztály nem található");
       }
 
       // 2. MindARThree példányosítása
       this.mindarThree = new MindARThreeClass({
         container: this.container,
-        imageTargetSrc: './card.mind', // Relatív elérés Vercel és lokális támogatáshoz
+        imageTargetSrc: './card.mind',
         filterMinCF: 0.0001,
         filterBeta: 0.001
       });
