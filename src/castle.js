@@ -30,14 +30,9 @@ export class CastleBuilder {
     });
   }
 
-  buildCastle(centerX = 0, centerZ = -2.5) {
+  buildCastle(centerX = 0, centerZ = 0) {
     this.clear();
 
-    // 4 különböző szilárd, önmagában stabil szerkezet típus:
-    // 0: Erődített Várfal & Bástyák
-    // 1: Piramis / Zikkurat (széles, masszív alap)
-    // 2: Két Bástyás Kaputorony összekötő híddal
-    // 3: 3x3-as Masszív Vártorony
     const layouts = ['fortress', 'pyramid', 'twin_towers', 'monolith'];
     const chosenLayout = layouts[Math.floor(Math.random() * layouts.length)];
 
@@ -60,7 +55,7 @@ export class CastleBuilder {
     }
   }
 
-  createBlock(x, y, z, material, mass = 1.2) {
+  createBlock(x, y, z, material, mass = 0.15) {
     const mesh = new THREE.Mesh(this.boxGeometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;

@@ -1,43 +1,46 @@
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
 
 export class Slingshot {
-  constructor(scene, physics, camera, domElement, onShoot) {
-    this.scene = scene;
+  constructor(group, physics, camera, domElement, onShoot) {
+    this.group = group;       // A csúzli saját Three.js csoportja az asztalon
     this.physics = physics;
     this.camera = camera;
     this.domElement = domElement;
     this.onShoot = onShoot;
 
     this.isAiming = false;
-    this.restPosition = new THREE.Vector3(0, 0.8, 1.5);
+
+    // Kompakt Asztali Méretek (méterben: ~15 cm magas csúzli)
+    this.stemHeight = 0.12;
+    this.forkWidth = 0.08;
+    this.restPosition = new THREE.Vector3(0, this.stemHeight + 0.02, 0); // nyugalmi pozíció a helyi koordinátákban
     this.currentPosition = this.restPosition.clone();
     this.pullVector = new THREE.Vector3();
 
     this.projectiles = [];
 
-    // Lövedék geometria és anyag
-    this.radius = 0.22;
-    this.sphereGeo = new THREE.SphereGeometry(this.radius, 32, 32);
+    // Lövedék geometria és anyag (kis kő / tűzgolyó: 5 cm átmérő)
+    this.radius = 0.025;
+    this.sphereGeo = new THREE.SphereGeometry(this.radius, 24, 24);
     this.projectileMat = new THREE.MeshStandardMaterial({
-      color: 0xf59e0b, // Lángoló narancs/arany
+      color: 0xf59e0b,
       roughness: 0.3,
-      metalness: 0.8,
+      metalness: 0.7,
       emissive: 0xd97706,
-      emissiveIntensity: 0.4
+      emissiveIntensity: 0.5
     });
 
-    // Nyugalmi lövedék (célzó golyó)
+    // Célzó golyó a csúzlira feszítve
     this.aimBall = new THREE.Mesh(this.sphereGeo, this.projectileMat);
     this.aimBall.position.copy(this.restPosition);
     this.aimBall.castShadow = true;
-    this.scene.add(this.aimBall);
+    this.group.add(this.aimBall);
 
-    // Csúzli talapzat és karok
+    // Csúzli fa ág modell felépítése
     this.createSlingshotModel();
 
-    // Célzó trajektória vonal (pontozott ív)
-    this.trajectoryPoints = 30;
+    // Célzó trajektória vonal (pontozott kék ív)
+    this.trajectoryPoints = 35;
     const trajGeo = new THREE.BufferGeometry();
     const trajPositions = new Float32Array(this.trajectoryPoints * 3);
     trajGeo.setAttribute('position', new THREE.BufferAttribute(trajPositions, 3));
@@ -45,63 +48,71 @@ export class Slingshot {
       trajGeo,
       new THREE.LineDashedMaterial({
         color: 0x38bdf8,
-        dashSize: 0.1,
-        gapSize: 0.05,
-        linewidth: 2
+        dashSize: 0.03,
+        gapSize: 0.015,
+        linewidth: 3
       })
     );
     this.trajectoryLine.visible = false;
-    this.scene.add(this.trajectoryLine);
+    // A trajektóriát a jelenetbe vagy a csúzli csoportba helyezzük
+    this.group.add(this.trajectoryLine);
 
-    // Kötél vonalak (bal és jobb gumi)
+    // Két rugalmas gumiszalag
     this.createBands();
 
-    // Raycaster és érintéskezelő
+    // Raycaster és érintéskezelő sík
     this.raycaster = new THREE.Raycaster();
-    this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -this.restPosition.z);
-    this.planeIntersect = new THREE.Vector3();
-
     this.bindEvents();
   }
 
   createSlingshotModel() {
-    this.baseGroup = new THREE.Group();
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.8 });
-    
-    // Oszlop
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.8), woodMat);
-    stem.position.set(0, 0.4, this.restPosition.z);
+    this.modelGroup = new THREE.Group();
+    const woodMat = new THREE.MeshStandardMaterial({
+      color: 0x5c3a21,
+      roughness: 0.85,
+      metalness: 0.05
+    });
+
+    // Törzs
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.012, 0.016, this.stemHeight, 16),
+      woodMat
+    );
+    stem.position.set(0, this.stemHeight / 2, 0);
     stem.castShadow = true;
-    this.baseGroup.add(stem);
+    this.modelGroup.add(stem);
 
-    // Bal és jobb szarv (villa)
-    this.leftFork = new THREE.Vector3(-0.35, 0.9, this.restPosition.z);
-    this.rightFork = new THREE.Vector3(0.35, 0.9, this.restPosition.z);
+    // Bal és jobb villa ág (szarv)
+    const forkH = 0.06;
+    this.leftFork = new THREE.Vector3(-this.forkWidth / 2, this.stemHeight + forkH * 0.8, 0);
+    this.rightFork = new THREE.Vector3(this.forkWidth / 2, this.stemHeight + forkH * 0.8, 0);
 
-    const forkL = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.4), woodMat);
-    forkL.position.set(-0.2, 0.85, this.restPosition.z);
+    const forkL = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, forkH, 12), woodMat);
+    forkL.position.set(-this.forkWidth / 3.5, this.stemHeight + forkH * 0.45, 0);
     forkL.rotation.z = Math.PI / 6;
-    this.baseGroup.add(forkL);
+    forkL.castShadow = true;
+    this.modelGroup.add(forkL);
 
-    const forkR = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.4), woodMat);
-    forkR.position.set(0.2, 0.85, this.restPosition.z);
+    const forkR = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, forkH, 12), woodMat);
+    forkR.position.set(this.forkWidth / 3.5, this.stemHeight + forkH * 0.45, 0);
     forkR.rotation.z = -Math.PI / 6;
-    this.baseGroup.add(forkR);
+    forkR.castShadow = true;
+    this.modelGroup.add(forkR);
 
-    this.scene.add(this.baseGroup);
+    this.group.add(this.modelGroup);
   }
 
   createBands() {
     const bandMat = new THREE.LineBasicMaterial({ color: 0xef4444, linewidth: 3 });
 
-    const bandLeftGeo = new THREE.BufferGeometry().setFromPoints([this.leftFork, this.aimBall.position]);
-    this.bandLeft = new THREE.Line(bandLeftGeo, bandMat);
+    const bandLGeo = new THREE.BufferGeometry().setFromPoints([this.leftFork, this.aimBall.position]);
+    this.bandLeft = new THREE.Line(bandLGeo, bandMat);
 
-    const bandRightGeo = new THREE.BufferGeometry().setFromPoints([this.rightFork, this.aimBall.position]);
-    this.bandRight = new THREE.Line(bandRightGeo, bandMat);
+    const bandRGeo = new THREE.BufferGeometry().setFromPoints([this.rightFork, this.aimBall.position]);
+    this.bandRight = new THREE.Line(bandRGeo, bandMat);
 
-    this.scene.add(this.bandLeft);
-    this.scene.add(this.bandRight);
+    this.group.add(this.bandLeft);
+    this.group.add(this.bandRight);
   }
 
   updateBands() {
@@ -110,23 +121,34 @@ export class Slingshot {
   }
 
   bindEvents() {
-    const getPointerPos = (e) => {
-      const rect = this.domElement.getBoundingClientRect();
-      const clientX = e.clientX ?? e.touches?.[0]?.clientX;
-      const clientY = e.clientY ?? e.touches?.[0]?.clientY;
-      return {
-        x: ((clientX - rect.left) / rect.width) * 2 - 1,
-        y: -((clientY - rect.top) / rect.height) * 2 + 1
-      };
+    let startScreenPos = { x: 0, y: 0 };
+    let currentScreenPos = { x: 0, y: 0 };
+
+    const getTouchOrMouse = (e) => {
+      const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+      const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+      return { x: clientX, y: clientY };
     };
 
     const onPointerDown = (e) => {
       if (e.target.closest('#ui-overlay button')) return;
-      const pos = getPointerPos(e);
-      this.raycaster.setFromCamera(pos, this.camera);
-      const intersects = this.raycaster.intersectObject(this.aimBall);
+      if (!this.group.visible) return;
 
-      if (intersects.length > 0 || (pos.y < -0.1 && Math.abs(pos.x) < 0.4)) {
+      const p = getTouchOrMouse(e);
+      startScreenPos = { ...p };
+      currentScreenPos = { ...p };
+
+      // Raycast vizsgálat az aimBall-ra vagy a csúzli környékére
+      const rect = this.domElement.getBoundingClientRect();
+      const ndc = {
+        x: ((p.x - rect.left) / rect.width) * 2 - 1,
+        y: -((p.y - rect.top) / rect.height) * 2 + 1
+      };
+      this.raycaster.setFromCamera(ndc, this.camera);
+      const intersects = this.raycaster.intersectObjects([this.aimBall, ...this.modelGroup.children]);
+
+      // Ha eltalálta a csúzlit VAGY a képernyő alsó felén húzza
+      if (intersects.length > 0 || ndc.y < 0.2) {
         this.isAiming = true;
         this.trajectoryLine.visible = true;
       }
@@ -134,23 +156,29 @@ export class Slingshot {
 
     const onPointerMove = (e) => {
       if (!this.isAiming) return;
-      const pos = getPointerPos(e);
-      this.raycaster.setFromCamera(pos, this.camera);
+      currentScreenPos = getTouchOrMouse(e);
 
-      // Metsszük egy síkkal a csúzli körül
-      const hit = new THREE.Vector3();
-      this.raycaster.ray.intersectPlane(this.dragPlane, hit);
+      // Kiszámoljuk az elhúzás mértékét képernyő pixelben
+      const deltaX = (currentScreenPos.x - startScreenPos.x) / window.innerWidth;
+      const deltaY = (currentScreenPos.y - startScreenPos.y) / window.innerHeight;
 
-      if (hit) {
-        // Korlátozzuk a húzás mértékét
-        const delta = hit.clone().sub(this.restPosition);
-        delta.z = Math.max(0, -delta.y * 0.5); // ahogy lehúzzuk, kicsit magunk felé is húzódik
-        delta.clampLength(0, 1.2); // max húzás
+      // Helyi koordinátában: deltaY húzza hátra a golyót (+Z tengely felé), deltaX mozgatja oldalra
+      const maxPull = 0.25; // maximum 25 cm hátrahúzás
+      const pullZ = Math.max(0, deltaY * 0.8);
+      const pullX = deltaX * 0.4;
+      const pullY = -deltaY * 0.15; // kicsit lefelé is húzódik
 
-        this.aimBall.position.copy(this.restPosition).add(delta);
-        this.updateBands();
-        this.updateTrajectory();
-      }
+      const clampedPullZ = Math.min(pullZ, maxPull);
+      const clampedPullX = Math.max(-0.15, Math.min(0.15, pullX));
+
+      this.aimBall.position.set(
+        this.restPosition.x + clampedPullX,
+        this.restPosition.y + pullY,
+        this.restPosition.z + clampedPullZ
+      );
+
+      this.updateBands();
+      this.updateTrajectory();
     };
 
     const onPointerUp = () => {
@@ -158,13 +186,13 @@ export class Slingshot {
       this.isAiming = false;
       this.trajectoryLine.visible = false;
 
-      // Lövedék kilövése
-      const pull = this.restPosition.clone().sub(this.aimBall.position);
-      if (pull.length() > 0.15) {
-        this.launch(pull);
+      // Kilövési erő kiszámítása
+      const localPull = this.aimBall.position.clone().sub(this.restPosition);
+      if (localPull.z > 0.03) {
+        this.launch(localPull);
       }
 
-      // Csúzli golyó visszaugrik a helyére
+      // Visszaállás
       this.aimBall.position.copy(this.restPosition);
       this.updateBands();
     };
@@ -179,19 +207,24 @@ export class Slingshot {
   }
 
   updateTrajectory() {
-    const pull = this.restPosition.clone().sub(this.aimBall.position);
-    const forceMultiplier = 16.0;
-    const velocity = new THREE.Vector3(
-      pull.x * forceMultiplier,
-      pull.y * forceMultiplier * 0.8 + 2.0,
-      pull.z * forceMultiplier - pull.length() * 12.0
+    // A golyó helyi koordinátájának eltérése a nyugalmi állapottól
+    const localPull = this.aimBall.position.clone().sub(this.restPosition);
+
+    // A kilövés előre (-Z helyi irányba) és kicsit felfelé (+Y) történik
+    const forceMultiplier = 28.0;
+    const localVel = new THREE.Vector3(
+      -localPull.x * forceMultiplier,
+      -localPull.y * forceMultiplier * 0.5 + localPull.z * 12.0,
+      -localPull.z * forceMultiplier
     );
 
+    // Trajektória pontok számítása a csúzli helyi koordinátarendszerében
     const positions = this.trajectoryLine.geometry.attributes.position.array;
-    const dt = 0.04;
+    const dt = 0.03;
     const g = -9.82;
-    let curr = this.restPosition.clone();
-    let vel = velocity.clone();
+
+    let curr = this.aimBall.position.clone();
+    let vel = localVel.clone();
 
     for (let i = 0; i < this.trajectoryPoints; i++) {
       positions[i * 3] = curr.x;
@@ -208,19 +241,27 @@ export class Slingshot {
     this.trajectoryLine.computeLineDistances();
   }
 
-  launch(pull) {
-    const forceMultiplier = 18.0;
+  launch(localPull) {
+    const forceMultiplier = 28.0;
+    const localVel = new THREE.Vector3(
+      -localPull.x * forceMultiplier,
+      -localPull.y * forceMultiplier * 0.5 + localPull.z * 12.0,
+      -localPull.z * forceMultiplier
+    );
+
+    // Áttranszformáljuk a kezdőpozíciót és a sebességvektort a világkoordinátákba!
+    const worldStart = this.aimBall.getWorldPosition(new THREE.Vector3());
+    const worldVel = localVel.clone().applyQuaternion(this.group.quaternion);
+
     const mesh = new THREE.Mesh(this.sphereGeo, this.projectileMat.clone());
     mesh.castShadow = true;
-    mesh.position.copy(this.aimBall.position);
-    this.scene.add(mesh);
+    mesh.position.copy(worldStart);
+    // A kilőtt golyót a globális színtérhez adjuk, hogy független legyen a csúzlitól
+    this.group.parent.add(mesh);
 
-    const body = this.physics.addSphere(mesh, this.radius, 8.0);
-    body.velocity.set(
-      pull.x * forceMultiplier,
-      pull.y * forceMultiplier * 0.8 + 2.0,
-      pull.z * forceMultiplier - pull.length() * 14.0
-    );
+    const body = this.physics.addSphere(mesh, this.radius, 0.8);
+    body.position.set(worldStart.x, worldStart.y, worldStart.z);
+    body.velocity.set(worldVel.x, worldVel.y, worldVel.z);
 
     this.projectiles.push({ mesh, body, createdAt: Date.now() });
 
@@ -233,10 +274,9 @@ export class Slingshot {
     const now = Date.now();
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
-      // 8 másodperc után töröljük a régi golyókat a memóriából
-      if (now - p.createdAt > 8000) {
+      if (now - p.createdAt > 7000) {
         this.physics.removeObject(p.mesh);
-        this.scene.remove(p.mesh);
+        p.mesh.parent?.remove(p.mesh);
         this.projectiles.splice(i, 1);
       }
     }

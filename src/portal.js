@@ -5,7 +5,7 @@ export class DimensionPortal {
     this.scene = scene;
     this.isActive = false;
     this.portalGroup = new THREE.Group();
-    this.portalGroup.position.set(0, 1.4, -2.5); // A vár mögött/felett lebegő kapu
+    this.portalGroup.position.set(0, 0.28, -0.15); // A vár mögött lebegő kompakt kapu
 
     this.createPortalFrame();
     this.createOtherWorldInside();
@@ -15,8 +15,8 @@ export class DimensionPortal {
   }
 
   createPortalFrame() {
-    // Sci-Fi / Mágikus ovális vagy kerek kapukeret
-    const torusGeo = new THREE.TorusGeometry(1.4, 0.08, 16, 64);
+    // Kompakt Sci-Fi ovális mágikus kapukeret (20 cm sugár)
+    const torusGeo = new THREE.TorusGeometry(0.22, 0.015, 16, 48);
     const torusMat = new THREE.MeshStandardMaterial({
       color: 0xec4899,
       emissive: 0xdb2777,
@@ -27,8 +27,8 @@ export class DimensionPortal {
     this.frameMesh = new THREE.Mesh(torusGeo, torusMat);
     this.portalGroup.add(this.frameMesh);
 
-    // Belső fény / örvény a kapuban
-    const circleGeo = new THREE.CircleGeometry(1.35, 32);
+    // Belső örvény
+    const circleGeo = new THREE.CircleGeometry(0.21, 32);
     const portalCoreMat = new THREE.MeshBasicMaterial({
       color: 0x1e1b4b,
       side: THREE.DoubleSide
@@ -38,11 +38,10 @@ export class DimensionPortal {
   }
 
   createOtherWorldInside() {
-    // Kis lebegő sziklák és idegen kristályok, amik a portál "mögött" látszódnak
     this.otherWorldGroup = new THREE.Group();
-    this.otherWorldGroup.position.set(0, 0, -1.0);
+    this.otherWorldGroup.position.set(0, 0, -0.1);
 
-    const crystalGeo = new THREE.OctahedronGeometry(0.25, 0);
+    const crystalGeo = new THREE.OctahedronGeometry(0.035, 0);
     const crystalMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       emissive: 0x0284c7,
@@ -51,12 +50,11 @@ export class DimensionPortal {
       metalness: 0.8
     });
 
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 6; i++) {
       const crystal = new THREE.Mesh(crystalGeo, crystalMat);
-      const angle = (i / 8) * Math.PI * 2;
-      const radius = 0.8 + Math.random() * 0.3;
-      crystal.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, -0.5 - Math.random() * 0.5);
-      crystal.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+      const angle = (i / 6) * Math.PI * 2;
+      const radius = 0.12 + Math.random() * 0.04;
+      crystal.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, -0.05 - Math.random() * 0.08);
       this.otherWorldGroup.add(crystal);
     }
 

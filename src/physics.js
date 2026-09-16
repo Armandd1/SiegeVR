@@ -1,7 +1,7 @@
 import * as CANNON from 'cannon-es';
 
-// Kockák és objektumok méretei
-export const BLOCK_SIZE = { x: 0.6, y: 0.4, z: 0.4 };
+// Kockák és objektumok méretei (Kompakt Asztali Méretarány: 8 cm x 5 cm x 5 cm)
+export const BLOCK_SIZE = { x: 0.08, y: 0.05, z: 0.05 };
 
 export class PhysicsWorld {
   constructor() {
@@ -9,17 +9,17 @@ export class PhysicsWorld {
       gravity: new CANNON.Vec3(0, -9.82, 0)
     });
 
-    // Engedélyezzük a testek elaltatását (sleep), így amíg nem éri őket erő/lövés, teljesen mozdulatlanok maradnak!
+    // Engedélyezzük a testek elaltatását (sleep), így mozdulatlanok maradnak lövésig
     this.world.allowSleep = true;
 
-    // Magas súrlódás és minimális pattogás, hogy sziklaszilárdan álljanak
+    // Magas súrlódás és minimális pattogás a sziklaszilárd állásért
     this.defaultMaterial = new CANNON.Material('default');
     const contactMaterial = new CANNON.ContactMaterial(
       this.defaultMaterial,
       this.defaultMaterial,
       {
-        friction: 0.8,     // Nagy tapadás a téglák között
-        restitution: 0.05  // Gyakorlatilag nincs magától mikrougrálás
+        friction: 0.85,
+        restitution: 0.05
       }
     );
     this.world.addContactMaterial(contactMaterial);
@@ -38,14 +38,13 @@ export class PhysicsWorld {
       shape: new CANNON.Plane(),
       material: this.defaultMaterial
     });
-    // A Cannon-es Plane alapértelmezetten a Z tengely felé néz, elforgatjuk, hogy felfelé nézzen (Y tengely)
     groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
     groundBody.position.set(0, 0, 0);
     this.world.addBody(groundBody);
     this.groundBody = groundBody;
   }
 
-  addBox(mesh, mass = 1) {
+  addBox(mesh, mass = 0.15) {
     const size = BLOCK_SIZE;
     const shape = new CANNON.Box(new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2));
     const body = new CANNON.Body({
@@ -56,18 +55,17 @@ export class PhysicsWorld {
       quaternion: new CANNON.Quaternion(mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w)
     });
 
-    // Nagyobb csillapítás és azonnali alvási küszöb a mikromozgások kizárására
     body.linearDamping = 0.3;
     body.angularDamping = 0.3;
-    body.sleepSpeedLimit = 0.1; // Ha ennél lassabb a mozgás, elalszik a test
-    body.sleepTimeLimit = 0.5;
+    body.sleepSpeedLimit = 0.05;
+    body.sleepTimeLimit = 0.4;
 
     this.world.addBody(body);
     this.syncObjects.push({ mesh, body });
     return body;
   }
 
-  addSphere(mesh, radius, mass = 5) {
+  addSphere(mesh, radius, mass = 0.8) {
     const shape = new CANNON.Sphere(radius);
     const body = new CANNON.Body({
       mass: mass,
@@ -75,6 +73,9 @@ export class PhysicsWorld {
       material: this.defaultMaterial,
       position: new CANNON.Vec3(mesh.position.x, mesh.position.y, mesh.position.z)
     });
+
+    body.linearDamping = 0.05;
+    body.angularDamping = 0.05;
 
     this.world.addBody(body);
     this.syncObjects.push({ mesh, body });

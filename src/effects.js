@@ -5,8 +5,8 @@ export class ParticleSystem {
     this.scene = scene;
     this.particles = [];
 
-    // Füst/törmelék részecske geometria
-    this.geometry = new THREE.DodecahedronGeometry(0.06);
+    // Füst/törmelék részecske geometria (kompakt kőtörmelék)
+    this.geometry = new THREE.DodecahedronGeometry(0.012);
     this.material = new THREE.MeshStandardMaterial({
       color: 0xf59e0b,
       roughness: 0.4,
@@ -15,15 +15,15 @@ export class ParticleSystem {
     });
   }
 
-  createImpact(position, count = 20) {
+  createImpact(position, count = 16) {
     for (let i = 0; i < count; i++) {
       const mesh = new THREE.Mesh(this.geometry, this.material);
       mesh.position.copy(position);
 
       const velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * 4.0,
-        Math.random() * 3.5 + 1.0,
-        (Math.random() - 0.5) * 4.0
+        (Math.random() - 0.5) * 1.6,
+        Math.random() * 1.4 + 0.4,
+        (Math.random() - 0.5) * 1.6
       );
 
       this.scene.add(mesh);

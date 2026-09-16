@@ -25,7 +25,9 @@ Egy web-alapú kiterjesztett valóság (WebAR) minijáték fejlesztése, amely a
 
 | Dátum / Lépés | Téma | Döntési lehetőségek | Meghozott döntés | Indoklás |
 | :--- | :--- | :--- | :--- | :--- |
-| 2026-09-16 | AR követés és Fejlesztési stratégia | A: MindAR képkövetés, B: WebXR síkdetektálás, C: Hibrid (3D Sandbox -> MindAR AR) | **Kizárólag tiszta AR mód (MindAR)** | A felhasználói döntés alapján minden külső 3D sandbox és orbit vezérlő eltávolításra kerül, az alkalmazás közvetlenül és kizárólag az élő kameraképpel és AR célkövetéssel indul. |
+| 2026-09-16 | AR követés és Fejlesztési stratégia | A: MindAR képkövetés, B: WebXR síkdetektálás, C: Hibrid | **Markerless WebXR Plane Tracking (Hit-Test)** | Marker nélküli, natív AR élmény az asztal felületének automatikus felismerésével. |
+| 2026-09-16 | Méretezés és lehelyezési logika | Egész szobás vs. Kompakt asztali méret, Együttes vs. Külön lehelyezés | **Kompakt Asztali Méretarány + 2 Lépcsős Elhelyezés** | A blokkok mérete 8x5x5 cm-re csökkentve (kényelmes asztali méret). Külön lépésben kerül lehelyezésre a Vár és a Csúzli az asztal tetszőleges pontjaira, automatikus célrafordulással. |
+| 2026-09-16 | Csúzli és Célzás mechanika | Képernyőérintés vs. Kézi húzás & röppálya | **Kézi húzás valós idejű 3D trajektóriával** | A golyó hátrahúzásakor a fizikai gravitációval számolt pontozott 3D ív kirajzolódik a célpontig, elengedésre kirepül és rombol. |
 
 ---
 
@@ -34,11 +36,11 @@ Egy web-alapú kiterjesztett valóság (WebAR) minijáték fejlesztése, amely a
 - [x] **1. Fázis:** 3D Asztali színtér és Fizikai szimuláció (Várépítés kockákból, talaj ütközőfelület, árnyékok).
 - [x] **2. Fázis:** Katapult / Csúzli mechanika és Lövedékfizika (Célzóív, erővektorok, becsapódás, téglák dőlése).
 - [x] **3. Fázis:** Részecske effektek & Hangeffektek (Becsapódási szikrák, Web Audio API szintetizált effektek).
-- [x] **4. Fázis:** AR integráció (MindAR képkövetés, kamera feed kezelés, célkép az asztalon).
+- [x] **4. Fázis:** Markerless WebXR AR integráció (Hit-Test síkdetektálás, nincs szükség papírkártyára).
 - [x] **5. Fázis:** Opcionális "Dimenzió Portál" (Sci-fi lebegő kapu és idegen világ belső tér).
-- [x] **6. Fázis:** Felhasználói felület (Glassmorphism HUD, gombok, újratöltés, portál ki/be kapcsoló, pontszám, marker előnézet).
-- [x] **7. Fázis:** Tesztelés és optimalizálás (Mobil és laptop böngésző támogatás).
-- [x] **8. Fázis:** Fizikai stabilitás és Procedurális építés:
+- [x] **6. Fázis:** Felhasználói felület (Glassmorphism HUD, gombok, újratöltés, portál ki/be kapcsoló, pontszám, újrapozicionálás).
+- [x] **7. Fázis:** Kétlépcsős lehelyezési rendszer (1. Vár lerakása -> 2. Csúzli lerakása távolabb -> Automatikus célrafordulás).
+- [x] **8. Fázis:** Asztali méretarány és fizikai finomhangolás (stabil téglák, alvási mechanizmus, dinamikus 3D trajektória).
   - Bekapcsolt alvási mechanizmus (`allowSleep = true`, `sleepSpeedLimit = 0.1`): a blokkok mozdulatlanok maradnak, nincs spontán eldőlés.
   - Megnövelt súrlódás (`friction: 0.8`) és csillapított mikromozgások.
   - **4 különböző random építmény típus**:
