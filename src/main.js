@@ -16,21 +16,27 @@ class ARApp {
   }
 
   async init() {
-    this.hint.innerText = "⏳ Kamera és AR inicializálása...";
+    this.hint.innerText = "⏳ 1/3: Three.js és MindAR könyvtárak betöltése...";
 
     try {
-      // A MindAR bundle-nek szüksége van a globális THREE objektumra
       window.THREE = THREE;
 
-      // Megvárjuk, amíg a MindAR globálisan elérhető
-      while (!window.MINDAR || !window.MINDAR.IMAGE) {
-        await new Promise(r => setTimeout(r, 100));
+      // Ha a MindAR még nem töltődött be a CDN-ről, dinamikusan betöltjük
+      if (!window.MINDAR || !window.MINDAR.IMAGE) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js';
+          script.onload = () => resolve();
+          script.onerror = (e) => reject(new Error("Nem sikerült letölteni a MindAR CDN-t"));
+          document.head.appendChild(script);
+        });
       }
 
-      const MindARThreeClass = window.MINDAR.IMAGE.MindARThree;
+      this.hint.innerText = "⏳ 2/3: AR motor konfigurálása...";
 
+      const MindARThreeClass = window.MINDAR?.IMAGE?.MindARThree;
       if (!MindARThreeClass) {
-        throw new Error("MindAR Three.js osztály nem található");
+        throw new Error("MindAR objektum nem elérhető a böngészőben");
       }
 
       // 2. MindARThree példányosítása
@@ -41,8 +47,10 @@ class ARApp {
         filterBeta: 0.001
       });
 
-    const { renderer, scene, camera } = this.mindarThree;
-    this.renderer = renderer;
+      this.hint.innerText = "⏳ 3/3: Kamera elindítása...";
+
+      const { renderer, scene, camera } = this.mindarThree;
+      this.renderer = renderer;
     this.scene = scene;
     this.camera = camera;
 
