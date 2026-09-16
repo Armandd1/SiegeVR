@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AR Asztali Ostrom (WebXR Felületérzékelés)</title>
+  <title>AR Asztali Ostrom</title>
   <link rel="stylesheet" href="./src/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- 3D Canvas -->
+  <!-- 3D Canvas Konténer -->
   <div id="canvas-container"></div>
 
   <!-- Modern Glassmorphism UI HUD -->
@@ -18,32 +18,27 @@
     <header class="hud-header">
       <div class="logo-badge">
         <span class="pulse-dot"></span>
-        <h1 class="title">AR ASZTALI OSTROM</h1>
+        <h1 class="title">AR OSTROM</h1>
       </div>
       <div class="stats-badge">
-        <span class="label">Pontszám:</span>
+        <span class="label">Pont:</span>
         <span id="score-display">0</span>
       </div>
     </header>
 
-    <!-- Állapotjelző / Segítő szöveg -->
+    <!-- Felső dinamikus útmutató sáv -->
     <div id="slingshot-hint" class="slingshot-hint">
-      🔍 Pásztázd a telefonnal az asztalt vagy a padlót!
+      🔍 Pásztázd az asztalt a telefonoddal!
     </div>
 
-    <!-- Alsó vezérlősáv -->
+    <!-- Alsó kezelősáv -->
     <footer class="hud-footer">
-      <button id="btn-portal" class="btn btn-secondary" title="Dimenziókapu ki/bekapcsolása">
-        <span class="btn-icon">🌀</span>
-        <span class="btn-text">Portál: KI</span>
-      </button>
-
       <button id="btn-reset" class="btn btn-primary" title="Vár újraépítése">
         <span class="btn-icon">🏰</span>
         <span class="btn-text">Újraépítés</span>
       </button>
 
-      <button id="btn-reposition" class="btn btn-accent" title="Vár és csúzli újbóli lerakása az asztalon">
+      <button id="btn-reposition" class="btn btn-accent" title="Új hely keresése az asztalon">
         <span class="btn-icon">📍</span>
         <span class="btn-text">Újrapozicionálás</span>
       </button>

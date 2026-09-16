@@ -4,7 +4,6 @@ import { PhysicsWorld } from './physics.js';
 import { CastleBuilder } from './castle.js';
 import { Slingshot } from './slingshot.js';
 import { ParticleSystem, SoundEffects } from './effects.js';
-import { DimensionPortal } from './portal.js';
 
 class WebXRApp {
   constructor() {
@@ -16,21 +15,19 @@ class WebXRApp {
     this.hitTestSource = null;
     this.hitTestSourceRequested = false;
 
-    // Kétlépcsős elhelyezési fázisok:
-    // 'WAITING_AR' -> 'PLACE_CASTLE' -> 'PLACE_SLINGSHOT' -> 'BATTLE'
-    this.placementStage = 'WAITING_AR';
+    // Kétlépcsős állapotgép: 'WAITING_AR' -> 'PLACE_CASTLE' -> 'PLACE_SLINGSHOT' -> 'BATTLE'
+    this.stage = 'WAITING_AR';
+    this.castleWorldPos = new THREE.Vector3();
 
     this.init();
   }
 
   init() {
-    // 1. Háttér és színtér
+    // 1. Színtér és Kamera
     this.scene = new THREE.Scene();
-
-    // 2. Kamera
     this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-    // 3. WebGLRenderer WebXR támogatással
+    // 2. WebGLRenderer WebXR támogatással
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -39,15 +36,15 @@ class WebXRApp {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
 
-    // 4. WebXR AR Gomb
-    const arButton = ARButton.createButton(this.renderer, {
+    // 3. WebXR AR Gomb
+    const arBtn = ARButton.createButton(this.renderer, {
       requiredFeatures: ['hit-test'],
       optionalFeatures: ['dom-overlay', 'hands'],
       domOverlay: { root: document.getElementById('ui-overlay') }
     });
-    document.body.appendChild(arButton);
+    document.body.appendChild(arBtn);
 
-    // 5. Fények
+    // 4. Megvilágítás
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
     this.scene.add(ambientLight);
 
@@ -59,41 +56,31 @@ class WebXRApp {
     dirLight.shadow.bias = -0.001;
     this.scene.add(dirLight);
 
-    // 6. Felületérzékelő Célzó Karika (Reticle)
-    const reticleGeo = new THREE.RingGeometry(0.08, 0.11, 32).rotateX(-Math.PI / 2);
+    // 5. Célzó karika (Reticle)
+    const reticleGeo = new THREE.RingGeometry(0.06, 0.08, 32).rotateX(-Math.PI / 2);
     const reticleMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide });
     this.reticle = new THREE.Mesh(reticleGeo, reticleMat);
     this.reticle.matrixAutoUpdate = false;
     this.reticle.visible = false;
     this.scene.add(this.reticle);
 
-    // 7. Csoportok a Várnak és a Csúzlinak (KÜLÖN csoportok!)
-    this.castleGroup = new THREE.Group();
-    this.castleGroup.visible = false;
-    this.scene.add(this.castleGroup);
-
-    this.slingshotGroup = new THREE.Group();
-    this.slingshotGroup.visible = false;
-    this.scene.add(this.slingshotGroup);
-
-    // Árnyékfelfogó az asztal felületére a vár alatt
-    const shadowPlane = new THREE.Mesh(
+    // 6. Árnyékfelfogó talaj
+    this.shadowPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3).rotateX(-Math.PI / 2),
       new THREE.ShadowMaterial({ opacity: 0.35 })
     );
-    shadowPlane.receiveShadow = true;
-    this.castleGroup.add(shadowPlane);
+    this.shadowPlane.receiveShadow = true;
+    this.shadowPlane.visible = false;
+    this.scene.add(this.shadowPlane);
 
-    // 8. Fizika, Effektek és Játékelemek
+    // 7. Rendszerek inicializálása
     this.physics = new PhysicsWorld();
     this.effects = new ParticleSystem(this.scene);
     this.sounds = new SoundEffects();
-    this.castle = new CastleBuilder(this.castleGroup, this.physics);
-    this.portal = new DimensionPortal(this.castleGroup);
+    this.castle = new CastleBuilder(this.scene, this.physics);
 
-    // Csúzli inicializálása
     this.slingshot = new Slingshot(
-      this.slingshotGroup,
+      this.scene,
       this.physics,
       this.camera,
       this.renderer.domElement,
@@ -102,15 +89,15 @@ class WebXRApp {
       }
     );
 
-    // 9. WebXR Controller a felületre koppintáshoz
+    // 8. WebXR Controller érintésekhez
     this.controller = this.renderer.xr.getController(0);
     this.controller.addEventListener('select', this.onSelect.bind(this));
     this.scene.add(this.controller);
 
-    // 10. UI kezelőszervek
+    // 9. UI események
     this.initUI();
 
-    // 11. Render ciklus
+    // 10. Render loop
     this.clock = new THREE.Clock();
     this.renderer.setAnimationLoop(this.render.bind(this));
 
@@ -119,48 +106,44 @@ class WebXRApp {
 
   onSelect() {
     // 1. LÉPÉS: VÁR LEHELYEZÉSE
-    if (this.placementStage === 'PLACE_CASTLE' && this.reticle.visible) {
-      this.castleGroup.position.setFromMatrixPosition(this.reticle.matrix);
-      this.castleGroup.visible = true;
+    if (this.stage === 'PLACE_CASTLE' && this.reticle.visible) {
+      this.castleWorldPos.setFromMatrixPosition(this.reticle.matrix);
 
-      // Felépítjük a várat a kívánt helyen
-      this.castle.buildCastle(0, 0);
+      // Árnyékfelfogó a vár alá
+      this.shadowPlane.position.copy(this.castleWorldPos);
+      this.shadowPlane.visible = true;
+
+      // Vár felépítése az asztalon
+      this.castle.buildCastleAt(this.castleWorldPos);
       this.sounds.playImpact();
 
-      // Átlépünk a 2. lépésre: Csúzli lehelyezése
-      this.placementStage = 'PLACE_SLINGSHOT';
+      // Átlépünk a csúzli lehelyezésére
+      this.stage = 'PLACE_SLINGSHOT';
       this.hint.innerText = "🎯 2/2 LÉPÉS: Lépj kicsit hátrébb, és KOPPINTS a CSÚZLI lerakásához!";
       return;
     }
 
     // 2. LÉPÉS: CSÚZLI LEHELYEZÉSE
-    if (this.placementStage === 'PLACE_SLINGSHOT' && this.reticle.visible) {
-      this.slingshotGroup.position.setFromMatrixPosition(this.reticle.matrix);
-      this.slingshotGroup.visible = true;
+    if (this.stage === 'PLACE_SLINGSHOT' && this.reticle.visible) {
+      const slingshotWorldPos = new THREE.Vector3().setFromMatrixPosition(this.reticle.matrix);
 
-      // A csúzlit automatikusan a vár felé fordítjuk!
-      this.slingshotGroup.lookAt(
-        this.castleGroup.position.x,
-        this.slingshotGroup.position.y,
-        this.castleGroup.position.z
-      );
-
+      // Csúzli lerakása és a vár felé fordítása
+      this.slingshot.placeAt(slingshotWorldPos, this.castleWorldPos);
       this.sounds.playImpact();
-      this.reticle.visible = false;
 
-      // Átlépünk a játék állapotba
-      this.placementStage = 'BATTLE';
-      this.hint.innerText = "🏹 Húzd hátra az ujjaddal a golyót a célzáshoz és engedd el!";
+      this.reticle.visible = false;
+      this.stage = 'BATTLE';
+      this.hint.innerText = "🏹 Húzd hátra a csúzli golyóját a célzáshoz és engedd el!";
     }
   }
 
   initUI() {
     const btnReset = document.getElementById('btn-reset');
-    const btnPortal = document.getElementById('btn-portal');
+    const btnReposition = document.getElementById('btn-reposition');
 
     btnReset.addEventListener('click', () => {
-      if (this.castleGroup.visible) {
-        this.castle.buildCastle(0, 0);
+      if (this.castleWorldPos.length() > 0.01) {
+        this.castle.buildCastleAt(this.castleWorldPos);
         this.score = 0;
         this.scoreDisplay.innerText = this.score;
         this.sounds.playImpact();
@@ -169,27 +152,15 @@ class WebXRApp {
       }
     });
 
-    const btnReposition = document.getElementById('btn-reposition');
     btnReposition.addEventListener('click', () => {
-      this.placementStage = 'PLACE_CASTLE';
-      this.castleGroup.visible = false;
-      this.slingshotGroup.visible = false;
+      this.stage = 'PLACE_CASTLE';
+      this.castle.clear();
+      this.slingshot.group.visible = false;
+      this.shadowPlane.visible = false;
       this.reticle.visible = true;
       this.score = 0;
       this.scoreDisplay.innerText = this.score;
       this.hint.innerText = "🏰 1/2 LÉPÉS: Pásztázd az asztalt, és KOPPINTS az új helyre!";
-    });
-
-    btnPortal.addEventListener('click', () => {
-      const active = this.portal.toggle();
-      this.sounds.playPortal();
-      if (active) {
-        btnPortal.classList.add('active-portal');
-        btnPortal.querySelector('.btn-text').innerText = 'Portál: BE';
-      } else {
-        btnPortal.classList.remove('active-portal');
-        btnPortal.querySelector('.btn-text').innerText = 'Portál: KI';
-      }
     });
   }
 
@@ -201,7 +172,6 @@ class WebXRApp {
 
   render(timestamp, frame) {
     const dt = Math.min(this.clock.getDelta(), 0.1);
-    const time = this.clock.getElapsedTime();
 
     if (frame) {
       const referenceSpace = this.renderer.xr.getReferenceSpace();
@@ -217,16 +187,16 @@ class WebXRApp {
         session.addEventListener('end', () => {
           this.hitTestSourceRequested = false;
           this.hitTestSource = null;
-          this.placementStage = 'WAITING_AR';
+          this.stage = 'WAITING_AR';
           this.reticle.visible = false;
         });
 
         this.hitTestSourceRequested = true;
-        this.placementStage = 'PLACE_CASTLE';
+        this.stage = 'PLACE_CASTLE';
       }
 
-      // Felületérzékelés aktív, amíg le nem raktuk mindkét tárgyat
-      if (this.hitTestSource && (this.placementStage === 'PLACE_CASTLE' || this.placementStage === 'PLACE_SLINGSHOT')) {
+      // Felületkeresés
+      if (this.hitTestSource && (this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT')) {
         const hitTestResults = frame.getHitTestResults(this.hitTestSource);
 
         if (hitTestResults.length > 0) {
@@ -236,23 +206,22 @@ class WebXRApp {
           this.reticle.visible = true;
           this.reticle.matrix.fromArray(pose.transform.matrix);
 
-          if (this.placementStage === 'PLACE_CASTLE') {
-            this.hint.innerText = "🏰 1/2 LÉPÉS: Asztal érzékelve! KOPPINTS a VÁR lerakásához!";
-          } else if (this.placementStage === 'PLACE_SLINGSHOT') {
-            this.hint.innerText = "🎯 2/2 LÉPÉS: Lépj hátrébb és KOPPINTS a CSÚZLI lerakásához!";
+          if (this.stage === 'PLACE_CASTLE') {
+            this.hint.innerText = "🏰 1/2: Asztal érzékelve! KOPPINTS a VÁR lerakásához!";
+          } else if (this.stage === 'PLACE_SLINGSHOT') {
+            this.hint.innerText = "🎯 2/2: Lépj kicsit hátrébb és KOPPINTS a CSÚZLI lerakásához!";
           }
         } else {
           this.reticle.visible = false;
-          this.hint.innerText = "🔍 Pásztázd a kamerával az asztal vagy padló felületét...";
+          this.hint.innerText = "🔍 Pásztázd a kamerával az asztal felületét...";
         }
       }
     }
 
-    // Csak a játék fázisban léptetjük a fizikai szimulációt
-    if (this.placementStage === 'BATTLE') {
+    // Fizikai világ léptetése
+    if (this.stage === 'BATTLE') {
       this.physics.step(dt);
       this.effects.update(dt);
-      this.portal.update(dt, time);
       this.slingshot.cleanOldProjectiles();
       this.updateScore();
     }
@@ -263,10 +232,8 @@ class WebXRApp {
   updateScore() {
     let movedBlocks = 0;
     for (const block of this.castle.blocks) {
-      // Ha a blokk leesett az asztalról vagy elmozdult a helyéről
-      const worldPos = block.getWorldPosition(new THREE.Vector3());
-      if (worldPos.y < this.castleGroup.position.y - 0.05 || 
-          worldPos.distanceTo(this.castleGroup.position) > 0.35) {
+      if (block.position.y < this.castleWorldPos.y - 0.04 || 
+          block.position.distanceTo(this.castleWorldPos) > 0.35) {
         movedBlocks++;
       }
     }
@@ -274,7 +241,7 @@ class WebXRApp {
     if (newScore !== this.score) {
       this.score = newScore;
       this.scoreDisplay.innerText = this.score;
-      this.effects.createImpact(this.castleGroup.position.clone().add(new THREE.Vector3(0, 0.15, 0)), 4);
+      this.effects.createImpact(this.castleWorldPos.clone().add(new THREE.Vector3(0, 0.1, 0)), 3);
       this.sounds.playImpact();
     }
   }
