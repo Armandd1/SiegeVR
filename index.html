@@ -3,20 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AR Asztali Ostrom & Dimenzió Portál</title>
+  <title>AR Asztali Ostrom (WebXR Felületérzékelés)</title>
   <link rel="stylesheet" href="./src/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
-  <!-- Importmap a böngészős Three.js feloldáshoz -->
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-      }
-    }
-  </script>
 </head>
 <body>
   <!-- 3D Canvas -->
@@ -35,9 +26,9 @@
       </div>
     </header>
 
-    <!-- Slingshot / Aim Helper Indicator -->
+    <!-- Állapotjelző / Segítő szöveg -->
     <div id="slingshot-hint" class="slingshot-hint">
-      🎯 Húzd hátra a golyót az asztalon és engedd el a lövéshez!
+      🔍 Pásztázd a telefonnal az asztalt vagy a padlót!
     </div>
 
     <!-- Alsó vezérlősáv -->
@@ -51,22 +42,7 @@
         <span class="btn-icon">🏰</span>
         <span class="btn-text">Újraépítés</span>
       </button>
-
-      <button id="btn-show-marker" class="btn btn-accent" title="Célkép / Marker megtekintése">
-        <span class="btn-icon">👁️</span>
-        <span class="btn-text">AR Kártya</span>
-      </button>
     </footer>
-
-    <!-- Marker előnézeti popup -->
-    <div id="marker-modal" class="modal-hidden">
-      <div class="modal-content">
-        <h3>AR Célkép (Marker)</h3>
-        <p>Mutasd fel ezt a képet a kamerának, vagy nyisd meg a telefonodon!</p>
-        <img src="/card.png" alt="AR Target Card" class="marker-preview-img" />
-        <button id="btn-close-marker" class="btn btn-primary" style="margin-top: 1rem;">Bezárás</button>
-      </div>
-    </div>
   </div>
 
   <script type="module" src="./src/main.js"></script>
