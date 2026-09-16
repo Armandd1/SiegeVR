@@ -3,7 +3,7 @@ import { PhysicsWorld } from './physics.js';
 import { CastleBuilder } from './castle.js';
 import { Slingshot } from './slingshot.js';
 import { ParticleSystem, SoundEffects } from './effects.js';
-import { DimensionPortal } from './portal.js';
+import { MindARThree } from '/mindar-image-three.prod.js';
 
 class ARApp {
   constructor() {
@@ -16,31 +16,11 @@ class ARApp {
   }
 
   async init() {
-    this.hint.innerText = "⏳ 1/3: Three.js és MindAR könyvtárak betöltése...";
+    this.hint.innerText = "⏳ Kamera és AR inicializálása...";
 
     try {
-      window.THREE = THREE;
-
-      // Ha a MindAR még nem töltődött be a CDN-ről, dinamikusan betöltjük
-      if (!window.MINDAR || !window.MINDAR.IMAGE) {
-        await new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js';
-          script.onload = () => resolve();
-          script.onerror = (e) => reject(new Error("Nem sikerült letölteni a MindAR CDN-t"));
-          document.head.appendChild(script);
-        });
-      }
-
-      this.hint.innerText = "⏳ 2/3: AR motor konfigurálása...";
-
-      const MindARThreeClass = window.MINDAR?.IMAGE?.MindARThree;
-      if (!MindARThreeClass) {
-        throw new Error("MindAR objektum nem elérhető a böngészőben");
-      }
-
-      // 2. MindARThree példányosítása
-      this.mindarThree = new MindARThreeClass({
+      // 2. MindARThree példányosítása közvetlen ES modulból
+      this.mindarThree = new MindARThree({
         container: this.container,
         imageTargetSrc: './card.mind',
         filterMinCF: 0.0001,
