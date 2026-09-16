@@ -18,18 +18,27 @@ class ARApp {
   async init() {
     this.hint.innerText = "⏳ Kamera és AR inicializálása...";
 
-    // Megvárjuk, amíg a MindAR elérhetővé válik a window objektumon
-    while (!window.MINDAR || !window.MINDAR.IMAGE) {
-      await new Promise(r => setTimeout(r, 100));
-    }
+    try {
+      // 1. Dinamikus ESM MindAR importálás vagy window ellenőrzés
+      let MindARThreeClass;
+      if (window.MINDAR && window.MINDAR.IMAGE) {
+        MindARThreeClass = window.MINDAR.IMAGE.MindARThree;
+      } else {
+        const mod = await import('https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js');
+        MindARThreeClass = window.MINDAR?.IMAGE?.MindARThree || mod.MindARThree;
+      }
 
-    // 2. MindARThree példányosítása
-    this.mindarThree = new window.MINDAR.IMAGE.MindARThree({
-      container: this.container,
-      imageTargetSrc: '/card.mind',
-      filterMinCF: 0.0001,
-      filterBeta: 0.001
-    });
+      if (!MindARThreeClass) {
+        throw new Error("MindAR modul nem tölthető be");
+      }
+
+      // 2. MindARThree példányosítása
+      this.mindarThree = new MindARThreeClass({
+        container: this.container,
+        imageTargetSrc: './card.mind', // Relatív elérés Vercel és lokális támogatáshoz
+        filterMinCF: 0.0001,
+        filterBeta: 0.001
+      });
 
     const { renderer, scene, camera } = this.mindarThree;
     this.renderer = renderer;
@@ -102,14 +111,32 @@ class ARApp {
     // 6. UI események
     this.initUI();
 
-    // 7. AR Kamera indítása
-    await this.mindarThree.start();
-    this.hint.innerText = "🔍 Irányítsd a kamerát az AR Kártyára!";
+    // 7. AR Kamera indítása hibakezeléssel
+    try {
+      await this.mindarThree.start();
+      this.hint.innerText = "🔍 Irányítsd a kamerát az AR Kártyára!";
+    } catch (camErr) {
+      console.error("Kamera indítási hiba:", camErr);
+      this.hint.innerText = "📷 Koppints ide a kamera engedélyezéséhez!";
+      this.hint.style.cursor = "pointer";
+      this.hint.onclick = async () => {
+        try {
+          await this.mindarThree.start();
+          this.hint.innerText = "🔍 Irányítsd a kamerát az AR Kártyára!";
+        } catch (e) {
+          alert("Kamera hiba: Győződj meg róla, hogy engedélyezted a kamerát a böngészőben! " + e.message);
+        }
+      };
+    }
 
     // 8. Render ciklus
     this.clock = new THREE.Clock();
     this.renderer.setAnimationLoop(this.animate.bind(this));
+  } catch (globalErr) {
+    console.error("AR Inicializációs hiba:", globalErr);
+    this.hint.innerText = "❌ Hiba: " + globalErr.message;
   }
+}
 
   initUI() {
     const btnReset = document.getElementById('btn-reset');
