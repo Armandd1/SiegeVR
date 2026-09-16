@@ -26,8 +26,9 @@ Egy web-alapú kiterjesztett valóság (WebAR) minijáték fejlesztése, amely a
 | Dátum / Lépés | Téma | Döntési lehetőségek | Meghozott döntés | Indoklás |
 | :--- | :--- | :--- | :--- | :--- |
 | 2026-09-16 | AR követés és Fejlesztési stratégia | A: MindAR képkövetés, B: WebXR síkdetektálás, C: Hibrid | **Markerless WebXR Plane Tracking (Hit-Test)** | Marker nélküli, natív AR élmény az asztal felületének automatikus felismerésével. |
-| 2026-09-16 | Méretezés és lehelyezési logika | Egész szobás vs. Kompakt asztali méret, Együttes vs. Külön lehelyezés | **Kompakt Asztali Méretarány + 2 Lépcsős Elhelyezés** | A blokkok mérete 8x5x5 cm-re csökkentve (kényelmes asztali méret). Külön lépésben kerül lehelyezésre a Vár és a Csúzli az asztal tetszőleges pontjaira, automatikus célrafordulással. |
-| 2026-09-16 | Csúzli és Célzás mechanika | Képernyőérintés vs. Kézi húzás & röppálya | **Kézi húzás valós idejű 3D trajektóriával** | A golyó hátrahúzásakor a fizikai gravitációval számolt pontozott 3D ív kirajzolódik a célpontig, elengedésre kirepül és rombol. |
+| 2026-09-16 | Vár stabilitás (spontán dőlés megszüntetése) | Sima alvás vs. Statikus összeragasztás becsapódásig | **Statikus összeragasztott kövek (Becsapódáskor dinamikus felébredés)** | A vár blokkjai felépítéskor statikusak (mereven össze vannak ragasztva), így fizikai képtelenség, hogy maguktól megmozduljanak vagy elboruljanak. A kilőtt golyó becsapódásakor válnak dinamikus merevtestekké. |
+| 2026-09-16 | Csúzli célzási irány | Three.js lookAt Z tengely vs. Közvetlen világvektor | **Közvetlen `dirToCastle` világvektor célzás** | A csúzli helyi Z forgatási anomáliáit kiküszöbölve a lövedék sebessége közvetlenül a csúzli és a vár közötti világvektorból számítódik. Kizárt az ellenkező irányba lövés. |
+| 2026-09-16 | Lövedék sebesség és célzás | Gyors kilövés vs. Lassított filmszerű ív | **Lassított sebesség + Szabad 3D célzás** | Kényelmesen követhető, filmszerű 3D parabolaív, közvetlen golyófogás a képernyőn. |
 
 ---
 

@@ -88,8 +88,12 @@ export class Slingshot {
     this.group.position.copy(worldPos);
     this.targetCastlePos.copy(lookTargetPos);
 
-    // A csúzlit a vár felé fordítjuk
-    this.group.lookAt(lookTargetPos.x, worldPos.y, lookTargetPos.z);
+    // Kiszámoljuk a csúzlitól a vár felé mutató vízszintes világvektort
+    this.dirToCastle = new THREE.Vector3().subVectors(lookTargetPos, worldPos).setY(0).normalize();
+    this.dirRight = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), this.dirToCastle).normalize();
+
+    // A csúzli elforgatása a vár felé: a -Z helyi tengelyt a dirToCastle irányába állítjuk
+    this.group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), this.dirToCastle);
     this.group.visible = true;
 
     // Visszaállítjuk a golyót
@@ -237,18 +241,29 @@ export class Slingshot {
     window.addEventListener('touchend', onEnd);
   }
 
+  calculateWorldVelocity(pullX, pullY, pullZ) {
+    // Ha még nem definiált, kiszámoljuk
+    if (!this.dirToCastle) {
+      this.dirToCastle = new THREE.Vector3(0, 0, -1);
+      this.dirRight = new THREE.Vector3(1, 0, 0);
+    }
+
+    // Sebesség méretezés a kompakt asztali pályához (kb. 3.5 - 6.5 m/s)
+    const forwardForce = Math.max(1.8, pullZ * 32.0);
+    const verticalForce = Math.max(0.7, pullZ * 10.0 - pullY * 16.0);
+    const sideForce = -pullX * 16.0; // ellenkező oldalra feszítés
+
+    const vel = new THREE.Vector3();
+    vel.addScaledVector(this.dirToCastle, forwardForce); // FŐ VEKTOR: EGYENESEN A VÁR FELÉ
+    vel.y = verticalForce;                               // EMELKEDŐ PARABOLA ÍV
+    vel.addScaledVector(this.dirRight, sideForce);       // OLDALIRÁNYÚ KORREKCIÓ
+
+    return vel;
+  }
+
   updateTrajectory(pullX, pullY, pullZ) {
     const worldStart = this.aimBall.getWorldPosition(new THREE.Vector3());
-
-    // Finomhangolt, filmszerű sebesség (nem túl gyors, szépen követhető ív)
-    const forwardForce = Math.max(1.0, pullZ * 35.0); // 3-7 m/s sebesség
-    const localVel = new THREE.Vector3(
-      -pullX * 22.0,      // oldalirányú korrekció (ellenkező irányba húzás)
-      -pullY * 18.0 + 1.2, // magassági szög finomhangolása
-      -forwardForce
-    );
-
-    const worldVel = localVel.clone().applyQuaternion(this.group.quaternion);
+    const worldVel = this.calculateWorldVelocity(pullX, pullY, pullZ);
 
     const positions = this.trajectoryLine.geometry.attributes.position.array;
     const dt = 0.035;
@@ -277,13 +292,7 @@ export class Slingshot {
 
   launch(localPull) {
     const worldStart = this.aimBall.getWorldPosition(new THREE.Vector3());
-    const forwardForce = Math.max(1.0, localPull.z * 35.0);
-    const localVel = new THREE.Vector3(
-      -localPull.x * 22.0,
-      -localPull.y * 18.0 + 1.2,
-      -forwardForce
-    );
-    const worldVel = localVel.clone().applyQuaternion(this.group.quaternion);
+    const worldVel = this.calculateWorldVelocity(localPull.x, localPull.y, localPull.z);
 
     const mesh = new THREE.Mesh(this.sphereGeo, this.projectileMat.clone());
     mesh.castShadow = true;
@@ -293,7 +302,7 @@ export class Slingshot {
     const body = this.physics.addSphere(mesh, worldStart, this.radius, 0.6);
     body.velocity.set(worldVel.x, worldVel.y, worldVel.z);
 
-    // Felébresztjük a vár blokkjait, hogy reagáljanak az ütközésre
+    // Felébresztjük a vár összeragasztott blokkjait, így a becsapódás azonnal ledönti őket!
     this.physics.wakeUpAllBlocks();
 
     this.projectiles.push({ mesh, body, createdAt: Date.now() });

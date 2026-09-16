@@ -44,27 +44,26 @@ export class PhysicsWorld {
   addBox(mesh, worldPos, mass = 0.2) {
     const size = BLOCK_SIZE;
     const shape = new CANNON.Box(new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2));
+    
+    // Alapértelmezetten STATIKUS testként hozzuk létre (összeragasztva), így magától 100%-ban mozdulatlan
     const body = new CANNON.Body({
-      mass: mass,
+      type: CANNON.Body.STATIC,
+      mass: 0,
       shape: shape,
       material: this.defaultMaterial,
       position: new CANNON.Vec3(worldPos.x, worldPos.y, worldPos.z)
     });
 
-    body.linearDamping = 0.35;
-    body.angularDamping = 0.35;
-    body.sleepSpeedLimit = 0.1;
-    body.sleepTimeLimit = 0.3;
-
-    // Azonnali elaltatás: a blokk szilárdan áll, amíg nem éri találat
-    body.sleep();
+    body.linearDamping = 0.4;
+    body.angularDamping = 0.4;
+    body.targetMass = mass; // Eltároljuk a dinamikus tömegét
 
     this.world.addBody(body);
     this.syncObjects.push({ mesh, body });
     return body;
   }
 
-  addSphere(mesh, worldPos, radius, mass = 1.0) {
+  addSphere(mesh, worldPos, radius, mass = 0.8) {
     const shape = new CANNON.Sphere(radius);
     const body = new CANNON.Body({
       mass: mass,
@@ -82,8 +81,12 @@ export class PhysicsWorld {
   }
 
   wakeUpAllBlocks() {
+    // Becsapódáskor / lövéskor a statikus köveket azonnal dinamikus fizikai merevtestekké alakítjuk!
     for (const { body, mesh } of this.syncObjects) {
-      if (mesh.userData.isCastleBlock && body.sleepState === CANNON.Body.SLEEPING) {
+      if (mesh.userData.isCastleBlock && body.type === CANNON.Body.STATIC) {
+        body.type = CANNON.Body.DYNAMIC;
+        body.mass = body.targetMass || 0.2;
+        body.updateMassProperties();
         body.wakeUp();
       }
     }
