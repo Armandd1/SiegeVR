@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AR Asztali Ostrom</title>
+  <title>AR Asztali Ostrom & Várromboló</title>
   <link rel="stylesheet" href="./src/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
   <!-- 3D Canvas Konténer -->
@@ -20,6 +20,11 @@
         <span class="pulse-dot"></span>
         <h1 class="title">AR OSTROM</h1>
       </div>
+
+      <div id="mode-badge" class="mode-badge">
+        🖥️ 3D Asztali Mód
+      </div>
+
       <div class="stats-badge">
         <span class="label">Pont:</span>
         <span id="score-display">0</span>
@@ -28,7 +33,7 @@
 
     <!-- Felső dinamikus útmutató sáv -->
     <div id="slingshot-hint" class="slingshot-hint">
-      🔍 Pásztázd az asztalt a telefonoddal!
+      🏹 Húzd hátra a csúzli golyóját az egérrel/érintéssel a célzáshoz!
     </div>
 
     <!-- Alsó kezelősáv -->
@@ -38,9 +43,9 @@
         <span class="btn-text">Újraépítés</span>
       </button>
 
-      <button id="btn-reposition" class="btn btn-accent" title="Új hely keresése az asztalon">
-        <span class="btn-icon">📍</span>
-        <span class="btn-text">Újrapozicionálás</span>
+      <button id="btn-reposition" class="btn btn-accent" title="Új elrendezés / pozicionálás">
+        <span class="btn-icon">🎲</span>
+        <span class="btn-text">Új Vár / Hely</span>
       </button>
     </footer>
   </div>
