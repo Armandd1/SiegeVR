@@ -88,6 +88,9 @@ export class ParticleSystem {
 
       if (p.age >= p.lifetime) {
         this.scene.remove(p.mesh);
+        if (p.isSmoke && p.mesh.material) {
+          p.mesh.material.dispose();
+        }
         this.particles.splice(i, 1);
         continue;
       }
@@ -119,6 +122,9 @@ export class ParticleSystem {
   clear() {
     for (const p of this.particles) {
       this.scene.remove(p.mesh);
+      if (p.isSmoke && p.mesh.material) {
+        p.mesh.material.dispose();
+      }
     }
     this.particles = [];
   }
@@ -128,9 +134,26 @@ export class ParticleSystem {
 export class SoundEffects {
   constructor() {
     this.ctx = null;
+    this.isMuted = false;
+  }
+
+  toggleMute() {
+    this.isMuted = !this.isMuted;
+    return this.isMuted;
+  }
+
+  triggerHaptic(pattern) {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate(pattern);
+      } catch (e) {
+        // Néhány mobil böngésző nem engedi felhasználói interakció nélkül
+      }
+    }
   }
 
   init() {
+    if (this.isMuted) return;
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AudioCtx();
@@ -142,6 +165,8 @@ export class SoundEffects {
 
   // Csúzli gumiszalag feszülés hangja
   playTension() {
+    this.triggerHaptic(12);
+    if (this.isMuted) return;
     this.init();
     if (!this.ctx) return;
 
@@ -164,6 +189,8 @@ export class SoundEffects {
 
   // Kilövés suhanó és elpattanó hangja
   playShoot() {
+    this.triggerHaptic([25, 20]);
+    if (this.isMuted) return;
     this.init();
     if (!this.ctx) return;
 
@@ -187,6 +214,8 @@ export class SoundEffects {
 
   // Masszív kőbecsapódási dörrenés és omlás
   playImpact() {
+    this.triggerHaptic([45, 30, 75]);
+    if (this.isMuted) return;
     this.init();
     if (!this.ctx) return;
 
@@ -236,6 +265,8 @@ export class SoundEffects {
 
   // Pontszerzési csengés
   playScore() {
+    this.triggerHaptic([20, 40, 20]);
+    if (this.isMuted) return;
     this.init();
     if (!this.ctx) return;
 

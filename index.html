@@ -2,12 +2,16 @@
 <html lang="hu">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>AR Asztali Ostrom & Várromboló</title>
   <link rel="stylesheet" href="./src/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- MediaPipe Hands & Camera Utils CDN a valós idejű kézkövetéshez -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
   <!-- 3D Canvas Konténer -->
@@ -15,39 +19,201 @@
 
   <!-- Modern Glassmorphism UI HUD -->
   <div id="ui-overlay">
+    <!-- Felső Fejléc -->
     <header class="hud-header">
-      <div class="logo-badge">
-        <span class="pulse-dot"></span>
-        <h1 class="title">AR OSTROM</h1>
+      <div class="header-left">
+        <div class="logo-badge">
+          <span class="pulse-dot"></span>
+          <span class="title">AR OSTROM</span>
+        </div>
+        <div id="castle-type-badge" class="castle-type-badge">
+          🏰 Királyi Erőd
+        </div>
       </div>
 
-      <div id="mode-badge" class="mode-badge">
-        🖥️ 3D Asztali Mód
-      </div>
+      <div class="header-right">
+        <!-- Vezérlési Módválasztó Gomb -->
+        <button id="btn-mode-select" class="mode-select-btn" title="Vezérlési mód váltása (Érintés / Telefon / Kéz)">
+          <span id="current-mode-icon">👆</span>
+          <span id="current-mode-label">Érintés</span>
+        </button>
 
-      <div class="stats-badge">
-        <span class="label">Pont:</span>
-        <span id="score-display">0</span>
+        <button id="btn-sound" class="icon-btn" title="Hang ki/bekapcsolása" aria-label="Hang némítás">
+          <span id="sound-icon">🔊</span>
+        </button>
+
+        <button id="btn-help" class="icon-btn" title="Játékszabály és Súgó" aria-label="Súgó">
+          <span>❓</span>
+        </button>
+
+        <div class="stats-badge">
+          <span class="label">Pont</span>
+          <span id="score-display">0</span>
+        </div>
       </div>
     </header>
 
-    <!-- Felső dinamikus útmutató sáv -->
+    <!-- AR Folyamatjelző Lépések (AR módban aktív) -->
+    <div id="ar-stepper" class="ar-stepper hidden">
+      <div class="step-item active" id="step-1">
+        <span class="step-num">1</span>
+        <span class="step-label">Vár helye</span>
+      </div>
+      <div class="step-divider"></div>
+      <div class="step-item" id="step-2">
+        <span class="step-num">2</span>
+        <span class="step-label">Csúzli</span>
+      </div>
+      <div class="step-divider"></div>
+      <div class="step-item" id="step-3">
+        <span class="step-num">3</span>
+        <span class="step-label">Ostrom</span>
+      </div>
+    </div>
+
+    <!-- Felső dinamikus útmutató kártya -->
     <div id="slingshot-hint" class="slingshot-hint">
-      🏹 Húzd hátra a csúzli golyóját az egérrel/érintéssel a célzáshoz!
+      <span class="hint-icon" id="hint-icon">🏹</span>
+      <span class="hint-text" id="hint-text">Húzd hátra a csúzli golyóját az ujjaddal a célzáshoz!</span>
+    </div>
+
+    <!-- Telefonmozgás Mód: Dedikált Megfogás & Húzás gomb -->
+    <div id="phone-motion-container" class="phone-motion-container hidden">
+      <button id="btn-phone-pull" class="btn btn-grab">
+        <span class="btn-icon">✊</span>
+        <span class="btn-text">Tartsd nyomva & Lépj hátra!</span>
+      </button>
+    </div>
+
+    <!-- Érintéses célzósegéd mobilon -->
+    <div id="touch-aim-helper" class="touch-aim-helper">
+      <div class="aim-arrow-down"></div>
+      <span>Húzd hátra az ujjad a célzáshoz</span>
     </div>
 
     <!-- Alsó kezelősáv -->
     <footer class="hud-footer">
       <button id="btn-reset" class="btn btn-primary" title="Vár újraépítése">
-        <span class="btn-icon">🏰</span>
+        <span class="btn-icon">🔄</span>
         <span class="btn-text">Újraépítés</span>
       </button>
 
-      <button id="btn-reposition" class="btn btn-accent" title="Új elrendezés / pozicionálás">
+      <button id="btn-cycle-castle" class="btn btn-secondary" title="Másik vár típus választása">
         <span class="btn-icon">🎲</span>
-        <span class="btn-text">Új Vár / Hely</span>
+        <span class="btn-text">Vár típus</span>
+      </button>
+
+      <button id="btn-reposition" class="btn btn-accent" title="Új elrendezés / AR újrakezdés">
+        <span class="btn-icon">📍</span>
+        <span class="btn-text">Áthelyezés</span>
       </button>
     </footer>
+  </div>
+
+  <!-- Kézkövetés Mini PIP Előnézet (Kézkövetés módban) -->
+  <div id="hand-pip-container" class="hand-pip-container hidden">
+    <video id="hand-webcam" playsinline muted autoplay style="display:none;"></video>
+    <canvas id="hand-pip-canvas"></canvas>
+    <div class="hand-pip-badge">🖐️ Kéz követése (Csippents!)</div>
+  </div>
+
+  <!-- 🎮 VEZÉRLÉSI MÓDVÁLASZTÓ MODÁLIS ABLAK -->
+  <div id="mode-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">🎮</span>
+          <h2>Válassz vezérlési módot!</h2>
+        </div>
+        <button id="btn-close-mode" class="modal-close" aria-label="Bezárás">&times;</button>
+      </div>
+
+      <div class="modal-body mode-grid">
+        <!-- 1. Mód: Érintés / Drag -->
+        <div class="mode-card active" data-mode="TOUCH" id="card-mode-touch">
+          <div class="mode-card-icon">👆</div>
+          <div class="mode-card-info">
+            <strong>Érintőképernyős célzás</strong>
+            <p>Klasszikus ujjhúzás a képernyőn. Finom célzás, szimmetrikus erővektor és látható röppálya ív.</p>
+            <span class="mode-tag">Legstabilabb & Legpontosabb</span>
+          </div>
+          <button class="btn btn-sm btn-primary mode-select-action">Kiválasztás</button>
+        </div>
+
+        <!-- 2. Mód: Térbeli Telefonmozgás -->
+        <div class="mode-card" data-mode="PHONE_MOTION" id="card-mode-phone">
+          <div class="mode-card-icon">📱</div>
+          <div class="mode-card-info">
+            <strong>Térbeli Telefonmozgás (6DoF)</strong>
+            <p>Tartsd nyomva a képernyőt, és lépj hátra a telefonnal a szobában! Az ujjad felengedésével kilövöd a golyót.</p>
+            <span class="mode-tag tag-purple">Valódi Fizikai Élmény</span>
+          </div>
+          <button class="btn btn-sm btn-secondary mode-select-action">Kiválasztás</button>
+        </div>
+
+        <!-- 3. Mód: Kézkövetés & Csippentés -->
+        <div class="mode-card" data-mode="HAND_TRACKING" id="card-mode-hand">
+          <div class="mode-card-icon">🖐️</div>
+          <div class="mode-card-info">
+            <strong>Kézkövetés & Csippentés (Air Pinch)</strong>
+            <p>Érintsd össze a mutató- és hüvelykujjad a levegőben, húzd hátra a kezed, majd nyisd szét a kilövéshez!</p>
+            <span class="mode-tag tag-cyan">Érintésmentes AI</span>
+          </div>
+          <button class="btn btn-sm btn-accent mode-select-action">Kiválasztás</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Súgó / Útmutató Modális Ablak -->
+  <div id="help-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">🏰</span>
+          <h2>Hogyan játssz?</h2>
+        </div>
+        <button id="btn-close-help" class="modal-close" aria-label="Bezárás">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="help-step">
+          <div class="help-step-icon">📱</div>
+          <div class="help-step-content">
+            <strong>1. Asztal beolvasása (WebAR)</strong>
+            <p>Nyomd meg az <em>AR Indítása</em> gombot! Mozgasd a telefont, amíg a kék célzókarika megjelenik az asztalon, majd koppints a vár felépítéséhez.</p>
+          </div>
+        </div>
+
+        <div class="help-step">
+          <div class="help-step-icon">🎯</div>
+          <div class="help-step-content">
+            <strong>2. Csúzli lerakása</strong>
+            <p>Lépj hátra 1-2 lépést a telefonnal, irányítsd az asztal felé a kamerát, és koppints a csúzli lehelyezéséhez.</p>
+          </div>
+        </div>
+
+        <div class="help-step">
+          <div class="help-step-icon">🎮</div>
+          <div class="help-step-content">
+            <strong>3. Háromféle vezérlési mód</strong>
+            <p>A fejlécben a 🎮 gombbal válthatsz: képernyős ujjhúzás (👆), telefonnal hátralépés (📱) vagy kézcsippentés a levegőben (🖐️).</p>
+          </div>
+        </div>
+
+        <div class="help-step">
+          <div class="help-step-icon">🚶</div>
+          <div class="help-step-content">
+            <strong>4. Sétálj körbe az asztalon!</strong>
+            <p>A telefon térbeli követésével körbejárhatod a virtuális várat, és a leggyengébb pontokra célozhatsz.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btn-dismiss-help" class="btn btn-primary btn-full">Értem, játszunk!</button>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="./src/main.js"></script>

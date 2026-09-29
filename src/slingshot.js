@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export class Slingshot {
-  constructor(scene, physics, camera, domElement, onShoot, onImpact, onTension) {
+  constructor(scene, physics, camera, domElement, onShoot, onImpact, onTension, onAim) {
     this.scene = scene;
     this.physics = physics;
     this.camera = camera;
@@ -9,6 +9,10 @@ export class Slingshot {
     this.onShoot = onShoot;
     this.onImpact = onImpact;
     this.onTension = onTension;
+    this.onAim = onAim;
+
+    this.castle = null;
+    this.trajRaycaster = new THREE.Raycaster();
 
     this.group = new THREE.Group();
     this.group.visible = false;
@@ -17,13 +21,13 @@ export class Slingshot {
     this.isAiming = false;
     this.targetCastlePos = new THREE.Vector3(0, 0, 0);
 
-    // Kompakt Asztali Méretek (kb. 16 cm magas fa ostrom csúzli)
-    this.stemHeight = 0.13;
-    this.forkWidth = 0.095;
-    this.forkHeight = 0.075;
+    // Kompakt Asztali Méretek (arányosítva a nagyobb várhoz: kb. 20 cm magas)
+    this.stemHeight = 0.16;
+    this.forkWidth = 0.125;
+    this.forkHeight = 0.095;
     this.restLocalPos = new THREE.Vector3(0, this.stemHeight + this.forkHeight * 0.45, 0);
 
-    this.radius = 0.024; // 4.8 cm átmérőjű lövedék
+    this.radius = 0.034; // 6.8 cm átmérőjű masszív ostromlövedék
     this.sphereGeo = new THREE.SphereGeometry(this.radius, 24, 24);
     
     // Izzó meteor / tüzes ágyúgolyó anyag
@@ -42,7 +46,7 @@ export class Slingshot {
     this.group.add(this.aimBall);
 
     // Bőr lövedéktartó fészek a golyó mögött
-    const pouchGeo = new THREE.BoxGeometry(0.045, 0.035, 0.012);
+    const pouchGeo = new THREE.BoxGeometry(0.06, 0.045, 0.016);
     const pouchMat = new THREE.MeshStandardMaterial({ color: 0x3d2314, roughness: 0.9 });
     this.pouch = new THREE.Mesh(pouchGeo, pouchMat);
     this.pouch.position.copy(this.restLocalPos);
@@ -50,7 +54,7 @@ export class Slingshot {
     this.group.add(this.pouch);
 
     // Kézfogó / Célzó karika pulzáló világítással
-    const ringGeo = new THREE.RingGeometry(0.035, 0.044, 32);
+    const ringGeo = new THREE.RingGeometry(0.044, 0.056, 32);
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
       side: THREE.DoubleSide,
@@ -67,39 +71,63 @@ export class Slingshot {
     // Valódi 3D gumiszalagok (a hajszálvékony 1px drótok helyett)
     this.create3DBands();
 
-    // 3D Röppálya trajektória
-    this.trajectoryPoints = 45;
+    // 3D Röppálya trajektória (nagy felbontású 65 pont a tűpontos előrejelzéshez)
+    this.trajectoryPoints = 65;
     const trajGeo = new THREE.BufferGeometry();
     const trajPositions = new Float32Array(this.trajectoryPoints * 3);
     trajGeo.setAttribute('position', new THREE.BufferAttribute(trajPositions, 3));
-    this.trajectoryLine = new THREE.Line(
-      trajGeo,
-      new THREE.LineBasicMaterial({
-        color: 0x38bdf8,
-        transparent: true,
-        opacity: 0.85
-      })
-    );
-    this.trajectoryLine.visible = false;
-    this.scene.add(this.trajectoryLine);
-
-    // Pontos becsapódási célkereszt
-    const hitMarkerGeo = new THREE.RingGeometry(0.022, 0.034, 32);
-    const hitMarkerMat = new THREE.MeshBasicMaterial({
-      color: 0xff3b30,
-      side: THREE.DoubleSide,
+    this.trajMaterial = new THREE.LineBasicMaterial({
+      color: 0x38bdf8,
       transparent: true,
       opacity: 0.9
     });
-    this.hitMarker = new THREE.Mesh(hitMarkerGeo, hitMarkerMat);
-    this.hitMarker.visible = false;
-    this.scene.add(this.hitMarker);
+    this.trajectoryLine = new THREE.Line(trajGeo, this.trajMaterial);
+    this.trajectoryLine.visible = false;
+    this.scene.add(this.trajectoryLine);
 
+    // Taktikai precíziós célkereszt csoport
+    this.hitMarkerGroup = new THREE.Group();
+    this.hitMarkerGroup.visible = false;
+    this.scene.add(this.hitMarkerGroup);
+
+    this.hitMarkerMat = new THREE.MeshBasicMaterial({
+      color: 0xef4444,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.95
+    });
+
+    const markerRing = new THREE.Mesh(new THREE.RingGeometry(0.024, 0.034, 32), this.hitMarkerMat);
+    this.hitMarkerGroup.add(markerRing);
+
+    const markerDot = new THREE.Mesh(new THREE.CircleGeometry(0.007, 16), this.hitMarkerMat);
+    this.hitMarkerGroup.add(markerDot);
+
+    // Szálkereszt rovátkák a célkereszten
+    [-1, 1].forEach(dir => {
+      const hBar = new THREE.Mesh(new THREE.PlaneGeometry(0.016, 0.0035), this.hitMarkerMat);
+      hBar.position.set(dir * 0.044, 0, 0);
+      this.hitMarkerGroup.add(hBar);
+
+      const vBar = new THREE.Mesh(new THREE.PlaneGeometry(0.0035, 0.016), this.hitMarkerMat);
+      vBar.position.set(0, dir * 0.044, 0);
+      this.hitMarkerGroup.add(vBar);
+    });
+
+    this.controlMode = 'TOUCH';
     this.projectiles = [];
     this.raycaster = new THREE.Raycaster();
     this.groundY = 0;
 
     this.bindEvents();
+  }
+
+  setCastle(castle) {
+    this.castle = castle;
+  }
+
+  setControlMode(mode) {
+    this.controlMode = mode;
   }
 
   placeAt(worldPos, lookTargetPos) {
@@ -119,6 +147,8 @@ export class Slingshot {
     this.aimBall.position.copy(this.restLocalPos);
     this.pouch.position.copy(this.restLocalPos);
     this.pullHelperRing.position.copy(this.restLocalPos);
+    this.trajectoryLine.visible = false;
+    this.hitMarkerGroup.visible = false;
     this.update3DBands();
   }
 
@@ -137,29 +167,29 @@ export class Slingshot {
 
     // 1. Stabil kör alakú nehéz fa talapzat, ami szilárdan ráfekszik az asztalra
     const baseMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.065, 0.075, 0.016, 24),
+      new THREE.CylinderGeometry(0.08, 0.095, 0.02, 24),
       woodMat
     );
-    baseMesh.position.set(0, 0.008, 0);
+    baseMesh.position.set(0, 0.01, 0);
     baseMesh.receiveShadow = true;
     baseMesh.castShadow = true;
     this.modelGroup.add(baseMesh);
 
     // 2. Fő törzs / fogantyú
     const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.013, 0.018, this.stemHeight, 16),
+      new THREE.CylinderGeometry(0.015, 0.022, this.stemHeight, 16),
       woodMat
     );
-    stem.position.set(0, this.stemHeight / 2 + 0.008, 0);
+    stem.position.set(0, this.stemHeight / 2 + 0.01, 0);
     stem.castShadow = true;
     this.modelGroup.add(stem);
 
     // 3. Két villa ág
-    const forkY = this.stemHeight + 0.008;
+    const forkY = this.stemHeight + 0.01;
     this.leftForkTip = new THREE.Vector3(-this.forkWidth / 2, forkY + this.forkHeight, 0);
     this.rightForkTip = new THREE.Vector3(this.forkWidth / 2, forkY + this.forkHeight, 0);
 
-    const forkGeo = new THREE.CylinderGeometry(0.009, 0.013, this.forkHeight, 14);
+    const forkGeo = new THREE.CylinderGeometry(0.011, 0.015, this.forkHeight, 14);
 
     const forkL = new THREE.Mesh(forkGeo, woodMat);
     forkL.position.set(-this.forkWidth / 3.4, forkY + this.forkHeight * 0.46, 0);
@@ -174,7 +204,7 @@ export class Slingshot {
     this.modelGroup.add(forkR);
 
     // 4. Réz rögzítőgyűrűk a villahegyeken
-    const ringGeo = new THREE.TorusGeometry(0.011, 0.0035, 12, 16);
+    const ringGeo = new THREE.TorusGeometry(0.014, 0.004, 12, 16);
     const ringL = new THREE.Mesh(ringGeo, brassMat);
     ringL.position.copy(this.leftForkTip);
     ringL.rotation.y = Math.PI / 2;
@@ -197,7 +227,7 @@ export class Slingshot {
     });
 
     // 1 egység magas alaphenger, amit skálázunk a hossza alapján
-    const bandGeo = new THREE.CylinderGeometry(0.0035, 0.0035, 1, 8);
+    const bandGeo = new THREE.CylinderGeometry(0.0045, 0.0045, 1, 8);
     bandGeo.translate(0, 0.5, 0); // origó az egyik végpontján
 
     this.bandLeft = new THREE.Mesh(bandGeo, bandMat);
@@ -253,7 +283,8 @@ export class Slingshot {
     };
 
     const onStart = (e) => {
-      if (e.target.closest('#ui-overlay button')) return;
+      if (this.controlMode !== 'TOUCH') return;
+      if (e.target.closest('#ui-overlay button') || e.target.closest('#help-modal') || e.target.closest('#mode-modal') || e.target.closest('#phone-motion-container')) return;
       if (!this.group.visible) return;
 
       const p = getPos(e);
@@ -271,13 +302,13 @@ export class Slingshot {
         ...this.modelGroup.children
       ]);
 
-      // Ha rákattint vagy a képernyő alsó felére bök
-      if (intersects.length > 0 || ndc.y < 0.35) {
+      // Ha a csúzlira bök vagy a képernyő alsóbb részén indítja a húzást
+      if (intersects.length > 0 || ndc.y < 0.45) {
         this.isAiming = true;
         hasPlayedTension = false;
         startScreenPos = { x: p.x, y: p.y };
         this.trajectoryLine.visible = true;
-        this.hitMarker.visible = true;
+        this.hitMarkerGroup.visible = true;
       }
     };
 
@@ -285,13 +316,17 @@ export class Slingshot {
       if (!this.isAiming) return;
       const p = getPos(e);
 
-      const dx = (p.x - startScreenPos.x) / window.innerWidth;
-      const dy = (p.y - startScreenPos.y) / window.innerHeight;
+      // Kijelző méretaránytól független, 1:1 szimmetrikus húzási skála (nincs ovális torzulás mobilon!)
+      const scaleRef = Math.min(window.innerWidth, window.innerHeight, 520);
+      const normX = (p.x - startScreenPos.x) / scaleRef;
+      const normY = (p.y - startScreenPos.y) / scaleRef;
 
-      // Hátrahúzás és célzás arányai
-      const pullZ = Math.max(0.015, Math.min(0.22, dy * 0.55));
-      const pullX = Math.max(-0.14, Math.min(0.14, dx * 0.4));
-      const pullY = Math.max(-0.09, Math.min(0.09, -dy * 0.28));
+      // Hátrahúzás (Z): lefelé húzáskor nő a feszültség
+      const pullZ = Math.max(0.005, Math.min(0.24, normY * 0.65));
+      // Oldalirányú célzás (X): finom vízszintes pásztázás
+      const pullX = Math.max(-0.16, Math.min(0.16, normX * 0.48));
+      // Magassági korrekció (Y): enyhe röppálya emelés/süllyesztés
+      const pullY = Math.max(-0.10, Math.min(0.10, -normY * 0.28));
 
       this.aimBall.position.set(
         this.restLocalPos.x + pullX,
@@ -302,7 +337,7 @@ export class Slingshot {
       this.update3DBands();
       this.updateTrajectory(pullX, pullY, pullZ);
 
-      if (!hasPlayedTension && pullZ > 0.05) {
+      if (!hasPlayedTension && pullZ > 0.04) {
         hasPlayedTension = true;
         if (this.onTension) this.onTension();
       }
@@ -312,11 +347,15 @@ export class Slingshot {
       if (!this.isAiming) return;
       this.isAiming = false;
       this.trajectoryLine.visible = false;
-      this.hitMarker.visible = false;
+      this.hitMarkerGroup.visible = false;
 
       const localPull = this.aimBall.position.clone().sub(this.restLocalPos);
-      if (localPull.z > 0.025) {
+      // Ha legalább 3.2 cm-t hátrahúzta (érdemi feszítés), akkor kilőjük
+      // Ha visszatolta a kiindulópont közelébe, a lövés visszavonódik (visszalépés)
+      if (localPull.z > 0.032) {
         this.launch(localPull);
+      } else if (this.onAim) {
+        this.onAim(0, null, true);
       }
 
       // Visszaáll nyugalmi helyzetbe
@@ -331,7 +370,7 @@ export class Slingshot {
     const onTouchStart = (e) => onStart(e);
     const onTouchMove = (e) => {
       if (this.isAiming) {
-        e.preventDefault(); // Megakadályozza a mobil böngésző lapozását és a pull-to-refresh-t célzás közben
+        e.preventDefault(); // Megakadályozza a mobil böngésző lapozását célzás közben
       }
       onMove(e);
     };
@@ -348,83 +387,146 @@ export class Slingshot {
       this.dirRight = new THREE.Vector3(1, 0, 0);
     }
 
-    // Finomhangolt sebesség az asztali méretarányhoz (3.8 - 7.0 m/s)
-    const forwardForce = Math.max(2.0, pullZ * 33.0);
-    const verticalForce = Math.max(0.8, pullZ * 11.0 - pullY * 16.0);
-    const sideForce = -pullX * 17.0;
+    // Hooke rugótörvénye: progresszív, természetes sebesség a hátrahúzás arányában
+    const power = Math.min(1.0, pullZ / 0.22);
+    const forwardSpeed = 3.8 + power * 4.4; // 3.8 m/s - 8.2 m/s
+    const upwardSpeed = 0.9 + power * 2.1 - (pullY / 0.1) * 1.8;
+    const sideSpeed = -(pullX / 0.16) * 2.3;
 
     const vel = new THREE.Vector3();
-    vel.addScaledVector(this.dirToCastle, forwardForce);
-    vel.y = verticalForce;
-    vel.addScaledVector(this.dirRight, sideForce);
+    vel.addScaledVector(this.dirToCastle, forwardSpeed);
+    vel.y = upwardSpeed;
+    vel.addScaledVector(this.dirRight, sideSpeed);
 
     return vel;
   }
 
   updateTrajectory(pullX, pullY, pullZ) {
+    this.trajectoryLine.visible = true;
+    if (this.hitMarkerGroup) this.hitMarkerGroup.visible = true;
+
     const worldStart = this.aimBall.getWorldPosition(new THREE.Vector3());
     const worldVel = this.calculateWorldVelocity(pullX, pullY, pullZ);
 
     const positions = this.trajectoryLine.geometry.attributes.position.array;
-    const dt = 0.032;
+    const dt = 0.02; // Finom 50 Hz időlépés a Cannon fizikai szimulációval megegyezően
     const g = -9.82;
+    const damping = 0.04; // Pontosan megegyezik a Cannon merevtest lineáris csillapításával!
 
     let curr = worldStart.clone();
     let vel = worldVel.clone();
     let hitFound = false;
     let hitPoint = curr.clone();
     let hitNormal = new THREE.Vector3(0, 1, 0);
+    let hitTargetName = 'Talaj / Asztal';
+    let isCastleHit = false;
 
     let hitIndex = this.trajectoryPoints - 1;
+
+    // Összegyűjtjük a vár valódi köveit a precíz sugárkövetéshez (Raycast)
+    const targetMeshes = [];
+    if (this.castle && Array.isArray(this.castle.blocks)) {
+      targetMeshes.push(...this.castle.blocks);
+    }
+    if (this.castle && Array.isArray(this.castle.foundationMeshes)) {
+      targetMeshes.push(...this.castle.foundationMeshes);
+    }
 
     for (let i = 0; i < this.trajectoryPoints; i++) {
       positions[i * 3] = curr.x;
       positions[i * 3 + 1] = curr.y;
       positions[i * 3 + 2] = curr.z;
 
-      // Elmozdulás kiszámítása
-      const nextX = curr.x + vel.x * dt;
-      const nextY = curr.y + vel.y * dt + 0.5 * g * dt * dt;
-      const nextZ = curr.z + vel.z * dt;
-      vel.y += g * dt;
+      // Következő elmozdulás kiszámítása Cannon-hű Euler lépéssel és csillapítással
+      const nextVel = vel.clone();
+      nextVel.y += g * dt;
+      nextVel.multiplyScalar(1 - damping * dt);
 
-      // Becsapódás vizsgálata a talajjal (asztallal)
-      if (!hitFound && nextY <= this.groundY) {
+      const nextPos = curr.clone().addScaledVector(nextVel, dt);
+
+      // 1. TŰPONTOS KŐÜTKÖZÉS: Szakasz-sugárkövetés a vár tényleges köveivel
+      if (!hitFound && targetMeshes.length > 0) {
+        const segVector = nextPos.clone().sub(curr);
+        const segDist = segVector.length();
+
+        if (segDist > 0.0001) {
+          this.trajRaycaster.set(curr, segVector.normalize());
+          this.trajRaycaster.far = segDist;
+
+          const intersects = this.trajRaycaster.intersectObjects(targetMeshes, false);
+          if (intersects.length > 0) {
+            const hit = intersects[0];
+            hitFound = true;
+            hitIndex = i;
+            hitPoint.copy(hit.point);
+
+            if (hit.face) {
+              hitNormal.copy(hit.face.normal).applyQuaternion(hit.object.quaternion).normalize();
+            } else {
+              hitNormal.set(0, 1, 0);
+            }
+
+            isCastleHit = hit.object.userData.isCastleBlock === true;
+            hitTargetName = isCastleHit ? '🏰 Várfal kőtömb' : 'Kőtalapzat';
+
+            positions[i * 3] = hitPoint.x;
+            positions[i * 3 + 1] = hitPoint.y;
+            positions[i * 3 + 2] = hitPoint.z;
+            break;
+          }
+        }
+      }
+
+      // 2. Becsapódás vizsgálata a valódi asztal lapjával
+      if (!hitFound && nextPos.y <= this.groundY) {
         hitFound = true;
         hitIndex = i;
-        hitPoint.set(nextX, this.groundY + 0.002, nextZ);
+
+        // Pontos sík-metszéspont interpolálása
+        const dyTotal = nextPos.y - curr.y;
+        const alpha = Math.abs(dyTotal) > 0.0001 ? Math.max(0, Math.min(1, (this.groundY - curr.y) / dyTotal)) : 0;
+
+        hitPoint.set(
+          curr.x + (nextPos.x - curr.x) * alpha,
+          this.groundY + 0.002,
+          curr.z + (nextPos.z - curr.z) * alpha
+        );
         hitNormal.set(0, 1, 0);
+        hitTargetName = 'Asztal lapja';
+        isCastleHit = false;
+
         positions[i * 3] = hitPoint.x;
         positions[i * 3 + 1] = hitPoint.y;
         positions[i * 3 + 2] = hitPoint.z;
         break;
       }
 
-      // Becsapódás vizsgálata a vár körzetével
-      if (!hitFound && this.targetCastlePos.length() > 0.01) {
-        const dToCastle = new THREE.Vector2(curr.x - this.targetCastlePos.x, curr.z - this.targetCastlePos.z).length();
-        if (dToCastle < 0.22 && curr.y < this.targetCastlePos.y + 0.35 && curr.y >= this.targetCastlePos.y) {
-          hitFound = true;
-          hitIndex = i;
-          hitPoint.copy(curr);
-          hitNormal.set(curr.x - this.targetCastlePos.x, 0.2, curr.z - this.targetCastlePos.z).normalize();
-          break;
-        }
-      }
-
-      curr.set(nextX, nextY, nextZ);
+      curr.copy(nextPos);
+      vel.copy(nextVel);
     }
 
-    // A trajektória vonal pontosan a becsapódásnál megáll (nem fúr bele a földbe)
+    // A trajektória vonal pontosan a becsapódási pontig tart
     this.trajectoryLine.geometry.setDrawRange(0, hitFound ? (hitIndex + 1) : this.trajectoryPoints);
     this.trajectoryLine.geometry.attributes.position.needsUpdate = true;
 
-    // Céljelző elhelyezése pontosan a becsapódási pontra
-    this.hitMarker.position.copy(hitFound ? hitPoint : curr);
-    if (hitFound && hitNormal.y > 0.8) {
-      this.hitMarker.rotation.set(-Math.PI / 2, 0, 0);
-    } else {
-      this.hitMarker.lookAt(this.camera.position);
+    // Röppálya színének dinamikus változása az erő mértékében
+    const power = Math.min(1.0, pullZ / 0.22);
+    const trajColor = power > 0.75 ? 0xef4444 : (power > 0.4 ? 0xf59e0b : 0x38bdf8);
+    this.trajMaterial.color.setHex(trajColor);
+
+    // Taktikai célkereszt pozicionálása és felületre simítása
+    if (this.hitMarkerGroup) {
+      this.hitMarkerGroup.position.copy(hitPoint).addScaledVector(hitNormal, 0.003);
+      this.hitMarkerGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), hitNormal);
+
+      // Célkereszt színezése: piros, ha közvetlen vártalálat, kék, ha asztalfelület
+      this.hitMarkerMat.color.setHex(isCastleHit ? 0xef4444 : 0x38bdf8);
+    }
+
+    // Célzási előrehaladás visszajelzése a HUD felületre
+    if (this.onAim) {
+      const percent = Math.round(power * 100);
+      this.onAim(percent, hitTargetName, false);
     }
   }
 
@@ -437,7 +539,7 @@ export class Slingshot {
     mesh.position.copy(worldStart);
     this.scene.add(mesh);
 
-    const body = this.physics.addSphere(mesh, worldStart, this.radius, 0.65);
+    const body = this.physics.addSphere(mesh, worldStart, this.radius, 1.15);
     body.velocity.set(worldVel.x, worldVel.y, worldVel.z);
 
     // FONTOS STABILITÁSI JAVÍTÁS:
@@ -459,12 +561,18 @@ export class Slingshot {
 
       // Kinetikus energia és impulzus átadása a közvetlenül eltalált merevtestnek
       if (event.body && event.body.type !== 0) { // nem STATIC
-        const forwardDir = new THREE.Vector3(body.velocity.x, body.velocity.y, body.velocity.z).normalize();
-        const impulseMagnitude = 0.45;
-        event.body.applyImpulse(
-          new (body.velocity.constructor)(forwardDir.x * impulseMagnitude, forwardDir.y * impulseMagnitude, forwardDir.z * impulseMagnitude),
-          new (body.position.constructor)(impactPoint.x, impactPoint.y, impactPoint.z)
-        );
+        const speedSq = body.velocity.x * body.velocity.x + body.velocity.y * body.velocity.y + body.velocity.z * body.velocity.z;
+        if (speedSq > 0.001) {
+          const invSpeed = 1 / Math.sqrt(speedSq);
+          const fX = body.velocity.x * invSpeed;
+          const fY = body.velocity.y * invSpeed;
+          const fZ = body.velocity.z * invSpeed;
+          const impulseMagnitude = 0.45;
+          event.body.applyImpulse(
+            new (body.velocity.constructor)(fX * impulseMagnitude, fY * impulseMagnitude, fZ * impulseMagnitude),
+            new (body.position.constructor)(impactPoint.x, impactPoint.y, impactPoint.z)
+          );
+        }
       }
     });
 
@@ -485,5 +593,13 @@ export class Slingshot {
         this.projectiles.splice(i, 1);
       }
     }
+  }
+
+  clearAllProjectiles() {
+    for (const p of this.projectiles) {
+      this.physics.removeObject(p.mesh);
+      this.scene.remove(p.mesh);
+    }
+    this.projectiles = [];
   }
 }
