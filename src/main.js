@@ -408,7 +408,7 @@ class WebXRApp {
     this.effects.createPlacementBurst(pos, 16);
     this.sounds.playBuild();
 
-    this.scanner.hide();
+    this.scanner.stop();
     this.slingshot.hideGhost();
     if (this.btnAutoSlingshot) this.btnAutoSlingshot.classList.add('hidden');
 
@@ -430,18 +430,18 @@ class WebXRApp {
   }
 
   onSelect() {
-    if (this.stage === 'PLACE_CASTLE' && this.scanner.active) {
+    if (this.stage === 'PLACE_CASTLE' && (this.scanner.hasPose || this.scanner.active)) {
       this.confirmCastlePlacement(this.scanner.getPosition());
       return;
     }
 
-    if (this.stage === 'PLACE_SLINGSHOT' && this.scanner.active) {
+    if (this.stage === 'PLACE_SLINGSHOT' && (this.scanner.hasPose || this.scanner.active)) {
       this.confirmSlingshotPlacement(this.scanner.getPosition());
     }
   }
 
   initDesktopPlacement() {
-    // Asztali módban az egér mozgása és kattintása a lehelyezési fázisban
+    // Asztali módban az egér mozgása a lehelyezési fázisban
     const getCoords = (e) => {
       const rect = this.renderer.domElement.getBoundingClientRect();
       return {
@@ -472,16 +472,15 @@ class WebXRApp {
       }
     });
 
-    this.renderer.domElement.addEventListener('pointerdown', (e) => {
-      if (this.isXRActive) return;
-      if (e.target.closest('#ui-overlay button') || e.target.closest('.modal-card')) return;
+    // Képernyőkoppintás / kattintás lehelyezéskor mind asztali, mind mobil AR módban
+    const onPlacementPointerDown = (e) => {
+      if (e.target && (e.target.closest('#ui-overlay button') || e.target.closest('.modal-card') || e.target.closest('#phone-motion-container'))) return;
 
-      if (this.stage === 'PLACE_CASTLE' && this.scanner.active) {
-        this.confirmCastlePlacement(this.scanner.getPosition());
-      } else if (this.stage === 'PLACE_SLINGSHOT' && this.scanner.active) {
-        this.confirmSlingshotPlacement(this.scanner.getPosition());
+      if ((this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT') && (this.scanner.hasPose || this.scanner.active)) {
+        this.onSelect();
       }
-    });
+    };
+    window.addEventListener('pointerdown', onPlacementPointerDown);
   }
 
   initUI() {
@@ -678,24 +677,26 @@ class WebXRApp {
         if (hitTestResults.length > 0) {
           const hit = hitTestResults[0];
           const pose = hit.getPose(referenceSpace);
-          const m = pose.transform.matrix;
-          const upY = m[5]; // Vízszintes sík vizsgálata (Y irányvektor felfelé mutat-e)
-          const isHorizontal = upY > 0.62;
+          if (pose && pose.transform) {
+            const m = pose.transform.matrix;
+            const upY = m[5]; // Vízszintes sík vizsgálata (Y irányvektor felfelé mutat-e)
+            const isHorizontal = upY > 0.4 || Math.abs(m[10]) > 0.4;
 
-          this.scanner.setPose(pose.transform.matrix, isHorizontal);
-          const scanPos = this.scanner.getPosition();
+            this.scanner.setPose(m, isHorizontal);
+            const scanPos = this.scanner.getPosition();
 
-          if (this.stage === 'PLACE_CASTLE') {
-            const yaw = Math.atan2(this.camera.position.x - scanPos.x, this.camera.position.z - scanPos.z);
-            this.castle.updateGhostPosition(scanPos, yaw);
-            this.setHint('🏰', isHorizontal ? 'Asztal érzékelve! KOPPINTS a VÁR lerakásához!' : '⚠️ Irányítsd vízszintes felületre!');
-          } else if (this.stage === 'PLACE_SLINGSHOT') {
-            const isValid = scanPos.distanceTo(this.castleWorldPos) >= 0.22;
-            this.slingshot.updateGhost(scanPos, this.castleWorldPos, isValid);
-            if (!isValid) {
-              this.setHint('⚠️', 'Túl közel a várhoz! Lépj hátrébb az asztal mellett.');
-            } else {
-              this.setHint('🎯', isHorizontal ? 'KOPPINTS a CSÚZLI lerakásához, vagy használd az Auto gombot!' : '⚠️ Irányítsd vízszintes felületre!');
+            if (this.stage === 'PLACE_CASTLE') {
+              const yaw = Math.atan2(this.camera.position.x - scanPos.x, this.camera.position.z - scanPos.z);
+              this.castle.updateGhostPosition(scanPos, yaw);
+              this.setHint('🏰', isHorizontal ? 'Asztal érzékelve! KOPPINTS a VÁR lerakásához!' : '⚠️ Irányítsd vízszintes felületre!');
+            } else if (this.stage === 'PLACE_SLINGSHOT') {
+              const isValid = scanPos.distanceTo(this.castleWorldPos) >= 0.22;
+              this.slingshot.updateGhost(scanPos, this.castleWorldPos, isValid);
+              if (!isValid) {
+                this.setHint('⚠️', 'Túl közel a várhoz! Lépj hátrébb az asztal mellett.');
+              } else {
+                this.setHint('🎯', isHorizontal ? 'KOPPINTS a CSÚZLI lerakásához, vagy használd az Auto gombot!' : '⚠️ Irányítsd vízszintes felületre!');
+              }
             }
           }
         } else {

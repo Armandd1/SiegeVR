@@ -19,7 +19,8 @@ export class SurfaceScanner {
     this.targetPos = new THREE.Vector3(0, 0, 0);
     this.currentQuat = new THREE.Quaternion();
     this.targetQuat = new THREE.Quaternion();
-    this.isPlaneValid = true;
+    this.tempMat4 = new THREE.Matrix4();
+    this.hasPose = false;
 
     // Felületi pásztázó hullámok (Sonár gyűrűk, amik kifelé terjednek a felületen)
     this.wavesCount = 3;
@@ -150,22 +151,37 @@ export class SurfaceScanner {
   }
 
   hide() {
-    this.active = false;
     this.group.visible = false;
   }
 
-  // Célzópozíció beállítása simítással és felületi szög ellenőrzéssel
+  stop() {
+    this.active = false;
+    this.hasPose = false;
+    this.group.visible = false;
+  }
+
+  // Célzópozíció beállítása simítással és felületi szög ellenőrzéssel (Float32Array vagy THREE.Matrix4)
   setPose(matrix, isValid = true) {
-    this.targetPos.setFromMatrixPosition(matrix);
-    this.targetQuat.setFromRotationMatrix(matrix);
+    if (!matrix) return;
+    if (matrix instanceof Float32Array || Array.isArray(matrix)) {
+      this.tempMat4.fromArray(matrix);
+      this.targetPos.set(matrix[12], matrix[13], matrix[14]);
+    } else if (matrix.isMatrix4) {
+      this.tempMat4.copy(matrix);
+      this.targetPos.setFromMatrixPosition(matrix);
+    }
+    this.targetQuat.setFromRotationMatrix(this.tempMat4);
     this.isPlaneValid = isValid;
+    this.hasPose = true;
 
     if (!this.group.visible) {
       this.currentPos.copy(this.targetPos);
       this.currentQuat.copy(this.targetQuat);
+      this.group.position.copy(this.currentPos);
+      this.group.quaternion.copy(this.currentQuat);
       this.group.visible = true;
-      this.active = true;
     }
+    this.active = true;
   }
 
   setPositionDirect(pos) {
@@ -177,10 +193,11 @@ export class SurfaceScanner {
     this.group.quaternion.identity();
     this.group.visible = true;
     this.active = true;
+    this.hasPose = true;
   }
 
   update(dt) {
-    if (!this.active || !this.group.visible) return;
+    if (!this.group.visible) return;
 
     this.time += dt;
 

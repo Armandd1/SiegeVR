@@ -74,6 +74,8 @@ Egy web-alapú kiterjesztett valóság (WebAR) minijáték fejlesztése, amely a
   - **Robusztus Kézkövetés:** Skálafüggetlen hiszterézis csippentés-detektálás (kézmérethez normalizálva), EMA zajszűrés a kézremegés ellen, biztonságos kamera- és szálkezelés.
   - **Hang- és Részecskekezelés:** Mester audió busz dinamika-kompresszorral (torzításmentes egyidejű becsapódások), ritkított pontszám-csengetés, perzisztens némításbeállítás (`localStorage`), hálókészlet-újrahasznosítás (pooling) a részecskerendszerben, és megpattanó kőtörmelék.
   - **HTML & UI Tisztítás:** Kijavítva a beágyazott unclosed badge hiba a fejlécben, és perzisztens rekord pontszám (`highScore`) kezelés bevezetve.
+  - **Felületi Pásztázás Javítás (Hit-Test Fix):** A WebXR `pose.transform.matrix` egy `Float32Array(16)`, amely nem rendelkezik `.elements` tulajdonsággal (ami korábban kivételt okozott a `setFromMatrixPosition` hívásakor). A `SurfaceScanner.setPose` mostantól közvetlenül és hibamentesen kezeli mind a `Float32Array`, mind a `THREE.Matrix4` formátumot, megengedőbb síkdőlési vizsgálattal, valamint asztali és mobil AR koppintásra azonnal rögzíthető lehelyezéssel.
+  - **Finom Csúzli Húzás (Kis Húzási Küszöb):** A korábbi túlzottan szigorú 3.2 cm-es minimális hátrahúzási küszöb (`fireZ`) 0.5 cm-re (5 mm-re) csökkentve. A katapult most már a legkisebb, finom mozdulattal történő ujjhúzásra is azonnal és lágyan kilövi a golyót ahelyett, hogy visszaugrana az alaphelyzetbe. A lövés csak akkor vonódik vissza, ha a játékos kifejezetten visszaengedi a golyót a nyugalmi origóra.
 
 ---
 

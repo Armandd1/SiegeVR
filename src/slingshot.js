@@ -4,11 +4,11 @@ import { PHYSICS_DT, GRAVITY, PROJECTILE_DAMPING } from './physics.js';
 
 // Egységes húzási határok – mindhárom vezérlési mód (érintés, telefon, kéz) ugyanezt használja
 export const PULL_LIMITS = {
-  minZ: 0.005,
+  minZ: 0.002,
   maxZ: 0.24,
   maxX: 0.16,
   maxY: 0.10,
-  fireZ: 0.032,      // ennyi hátrahúzás alatt a lövés visszavonódik
+  fireZ: 0.005,      // finom, kis húzás esetén is kilövi a golyót! Csak a kiindulási pontra visszatolás ( < 5 mm ) vonja vissza
   fullPowerZ: 0.22   // 100%-os erő
 };
 
@@ -428,7 +428,7 @@ export class Slingshot {
     this.update3DBands();
     this.updateTrajectory(x, y, z);
 
-    if (!this.hasPlayedTension && z > 0.04) {
+    if (!this.hasPlayedTension && z > 0.012) {
       this.hasPlayedTension = true;
       if (this.onTension) this.onTension();
     }
@@ -593,8 +593,8 @@ export class Slingshot {
   calculateWorldVelocity(pullX, pullY, pullZ, target = new THREE.Vector3()) {
     // Hooke rugótörvénye: progresszív, természetes sebesség a hátrahúzás arányában
     const power = Math.min(1.0, pullZ / PULL_LIMITS.fullPowerZ);
-    const forwardSpeed = 3.8 + power * 4.4; // 3.8 m/s - 8.2 m/s
-    const upwardSpeed = 0.9 + power * 2.1 - (pullY / PULL_LIMITS.maxY) * 1.8;
+    const forwardSpeed = 2.4 + power * 5.8; // 2.4 m/s (finom kis húzás) - 8.2 m/s (teljes ostromerő)
+    const upwardSpeed = 0.5 + power * 2.5 - (pullY / PULL_LIMITS.maxY) * 1.8;
     const sideSpeed = -(pullX / PULL_LIMITS.maxX) * 2.3;
 
     target.set(0, 0, 0);
