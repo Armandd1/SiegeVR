@@ -46,6 +46,11 @@
           <span>❓</span>
         </button>
 
+        <div id="hand-status-badge" class="hand-status-badge hidden">
+          <span class="pulse-dot-cyan"></span>
+          <span id="hand-status-label">🖐️ Kéz aktív</span>
+        </div>
+
         <div class="stats-badge">
           <span class="label">Pont</span>
           <span id="score-display">0</span>
@@ -53,45 +58,44 @@
       </div>
     </header>
 
-    <!-- AR Folyamatjelző Lépések (AR módban aktív) -->
-    <div id="ar-stepper" class="ar-stepper hidden">
-      <div class="step-item active" id="step-1">
-        <span class="step-num">1</span>
-        <span class="step-label">Vár helye</span>
+    <!-- Felső Kompakt Állapotsor (Közvetlenül a fejléc alatt, nem takarja ki a játéktér közepét) -->
+    <div class="hud-top-subbar">
+      <!-- AR Folyamatjelző Lépések (Kompakt mini pill) -->
+      <div id="ar-stepper" class="ar-stepper hidden">
+        <div class="step-item active" id="step-1">
+          <span class="step-num">1</span>
+          <span class="step-label">Vár</span>
+        </div>
+        <div class="step-divider"></div>
+        <div class="step-item" id="step-2">
+          <span class="step-num">2</span>
+          <span class="step-label">Csúzli</span>
+        </div>
+        <div class="step-divider"></div>
+        <div class="step-item" id="step-3">
+          <span class="step-num">3</span>
+          <span class="step-label">Harc</span>
+        </div>
       </div>
-      <div class="step-divider"></div>
-      <div class="step-item" id="step-2">
-        <span class="step-num">2</span>
-        <span class="step-label">Csúzli</span>
-      </div>
-      <div class="step-divider"></div>
-      <div class="step-item" id="step-3">
-        <span class="step-num">3</span>
-        <span class="step-label">Ostrom</span>
+
+      <!-- Felső kompakt diszkrét útmutató pill -->
+      <div id="slingshot-hint" class="slingshot-hint">
+        <span class="hint-icon" id="hint-icon">🏹</span>
+        <span class="hint-text" id="hint-text">Célzáshoz húzd hátra a golyót!</span>
       </div>
     </div>
 
-    <!-- Felső dinamikus útmutató kártya -->
-    <div id="slingshot-hint" class="slingshot-hint">
-      <span class="hint-icon" id="hint-icon">🏹</span>
-      <span class="hint-text" id="hint-text">Húzd hátra a csúzli golyóját az ujjaddal a célzáshoz!</span>
-    </div>
+    <!-- Tiszta középső tér: NINCS semmilyen takaró gomb vagy nyíl a kamera közepén! -->
 
-    <!-- Telefonmozgás Mód: Dedikált Megfogás & Húzás gomb -->
+    <!-- Telefonmozgás Mód: Kézreálló hüvelykujj-gomb a jobb alsó sarokban (nem takarja a közepet!) -->
     <div id="phone-motion-container" class="phone-motion-container hidden">
-      <button id="btn-phone-pull" class="btn btn-grab">
-        <span class="btn-icon">✊</span>
-        <span class="btn-text">Tartsd nyomva & Lépj hátra!</span>
+      <button id="btn-phone-pull" class="btn-phone-fab" title="Tartsd nyomva & lépj hátra!">
+        <span class="fab-icon">✊</span>
+        <span class="fab-text">HÚZÁS</span>
       </button>
     </div>
 
-    <!-- Érintéses célzósegéd mobilon -->
-    <div id="touch-aim-helper" class="touch-aim-helper">
-      <div class="aim-arrow-down"></div>
-      <span>Húzd hátra az ujjad a célzáshoz</span>
-    </div>
-
-    <!-- Alsó kezelősáv -->
+    <!-- Alsó kezelősáv (Kompakt és kézreálló) -->
     <footer class="hud-footer">
       <button id="btn-reset" class="btn btn-primary" title="Vár újraépítése">
         <span class="btn-icon">🔄</span>
@@ -103,6 +107,11 @@
         <span class="btn-text">Vár típus</span>
       </button>
 
+      <button id="btn-auto-slingshot" class="btn btn-warning hidden" title="Csúzli azonnali lehelyezése ideális távolságra (50 cm)">
+        <span class="btn-icon">✨</span>
+        <span class="btn-text">Auto csúzli</span>
+      </button>
+
       <button id="btn-reposition" class="btn btn-accent" title="Új elrendezés / AR újrakezdés">
         <span class="btn-icon">📍</span>
         <span class="btn-text">Áthelyezés</span>
@@ -110,12 +119,8 @@
     </footer>
   </div>
 
-  <!-- Kézkövetés Mini PIP Előnézet (Kézkövetés módban) -->
-  <div id="hand-pip-container" class="hand-pip-container hidden">
-    <video id="hand-webcam" playsinline muted autoplay style="display:none;"></video>
-    <canvas id="hand-pip-canvas"></canvas>
-    <div class="hand-pip-badge">🖐️ Kéz követése (Csippents!)</div>
-  </div>
+  <!-- Rejtett Háttér Webkamera (A szelfi kamera tartalma SOHA NEM JELENIK MEG a képernyőn!) -->
+  <video id="hand-webcam" playsinline muted autoplay style="display:none;"></video>
 
   <!-- 🎮 VEZÉRLÉSI MÓDVÁLASZTÓ MODÁLIS ABLAK -->
   <div id="mode-modal" class="modal-backdrop hidden">

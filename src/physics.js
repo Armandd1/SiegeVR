@@ -3,10 +3,17 @@ import * as CANNON from 'cannon-es';
 // Kockák mérete: masszív, jól látható asztali méret (12 cm széles, 7 cm magas, 7 cm mély)
 export const BLOCK_SIZE = { x: 0.12, y: 0.07, z: 0.07 };
 
+// Fix fizikai időlépés – a röppálya-előrejelzés is pontosan ezzel számol
+export const PHYSICS_DT = 1 / 60;
+export const GRAVITY = -9.82;
+export const PROJECTILE_DAMPING = 0.04;
+
+const Y_AXIS = new CANNON.Vec3(0, 1, 0);
+
 export class PhysicsWorld {
   constructor() {
     this.world = new CANNON.World({
-      gravity: new CANNON.Vec3(0, -9.82, 0)
+      gravity: new CANNON.Vec3(0, GRAVITY, 0)
     });
 
     // Stabilitás maximalizálása: 40 solver iteráció a kőtömbök egymásba csúszásának kizárására
@@ -42,6 +49,7 @@ export class PhysicsWorld {
     });
     this.groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
     this.groundBody.position.set(0, 0, 0);
+    this.groundBody.isGround = true;
     this.world.addBody(this.groundBody);
 
     this.syncObjects = [];
@@ -51,14 +59,14 @@ export class PhysicsWorld {
     this.groundBody.position.set(0, y, 0);
   }
 
-  addBox(mesh, worldPos, mass = 0.85, isStatic = true) {
+  addBox(mesh, worldPos, mass = 0.85, isStatic = true, yaw = 0) {
     const size = BLOCK_SIZE;
     // Vízszintes toleranciaköz az oldalirányú feszülések kiküszöbölésére, míg Y-ban pontos felfekvés (nincs zökkenés/zuhanás)
     const halfX = Math.max(0.001, (size.x - 0.001) / 2);
     const halfY = size.y / 2;
     const halfZ = Math.max(0.001, (size.z - 0.001) / 2);
     const shape = new CANNON.Box(new CANNON.Vec3(halfX, halfY, halfZ));
-    
+
     // Alapértelmezetten STATIKUS testként épül fel a vár -> 100%-os mozdulatlanság becsapódásig!
     const body = new CANNON.Body({
       type: isStatic ? CANNON.Body.STATIC : CANNON.Body.DYNAMIC,
@@ -67,6 +75,7 @@ export class PhysicsWorld {
       material: this.defaultMaterial,
       position: new CANNON.Vec3(worldPos.x, worldPos.y, worldPos.z)
     });
+    if (yaw !== 0) body.quaternion.setFromAxisAngle(Y_AXIS, yaw);
 
     body.linearDamping = 0.45;
     body.angularDamping = 0.45;
@@ -74,6 +83,7 @@ export class PhysicsWorld {
     body.allowSleep = true;
     body.sleepSpeedLimit = 0.08;
     body.sleepTimeLimit = 0.25;
+    body.isCastleBlock = true;
 
     this.world.addBody(body);
     this.syncObjects.push({ mesh, body });
@@ -89,15 +99,16 @@ export class PhysicsWorld {
       position: new CANNON.Vec3(worldPos.x, worldPos.y, worldPos.z)
     });
 
-    body.linearDamping = 0.04;
-    body.angularDamping = 0.04;
+    body.linearDamping = PROJECTILE_DAMPING;
+    body.angularDamping = PROJECTILE_DAMPING;
+    body.isProjectile = true;
 
     this.world.addBody(body);
     this.syncObjects.push({ mesh, body });
     return body;
   }
 
-  addPlinth(mesh, worldPos, size) {
+  addPlinth(mesh, worldPos, size, yaw = 0) {
     const shape = new CANNON.Box(new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2));
     const body = new CANNON.Body({
       type: CANNON.Body.STATIC,
@@ -106,6 +117,9 @@ export class PhysicsWorld {
       material: this.defaultMaterial,
       position: new CANNON.Vec3(worldPos.x, worldPos.y, worldPos.z)
     });
+    if (yaw !== 0) body.quaternion.setFromAxisAngle(Y_AXIS, yaw);
+    body.isFoundation = true;
+
     this.world.addBody(body);
     this.syncObjects.push({ mesh, body });
     return body;
@@ -138,23 +152,24 @@ export class PhysicsWorld {
   }
 
   clearCastle() {
-    const toRemove = [...this.syncObjects];
-    for (const item of toRemove) {
+    // Egyetlen szűrő menet a korábbi O(n²) indexOf + splice helyett
+    this.syncObjects = this.syncObjects.filter(item => {
       if (item.mesh.userData.isCastleBlock || item.mesh.userData.isFoundation) {
         this.world.removeBody(item.body);
-        const idx = this.syncObjects.indexOf(item);
-        if (idx !== -1) this.syncObjects.splice(idx, 1);
+        return false;
       }
-    }
+      return true;
+    });
   }
 
   step(dt) {
     // Delta-idő lefogása maximum 33 ms-re, megakadályozva a képkockavesztés miatti robbanásokat
     const safeDt = Math.min(dt, 0.033);
-    this.world.step(1 / 60, safeDt, 5);
+    this.world.step(PHYSICS_DT, safeDt, 5);
 
-    // Three.js hálók pozíciójának és forgatásának szinkronizálása
+    // Three.js hálók szinkronizálása – statikus és alvó testeket kihagyjuk (nem mozdulnak)
     for (const { mesh, body } of this.syncObjects) {
+      if (body.type === CANNON.Body.STATIC || body.sleepState === CANNON.Body.SLEEPING) continue;
       mesh.position.copy(body.position);
       mesh.quaternion.copy(body.quaternion);
     }

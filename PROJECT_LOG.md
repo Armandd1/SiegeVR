@@ -57,21 +57,31 @@ Egy web-alapú kiterjesztett valóság (WebAR) minijáték fejlesztése, amely a
   - **Procedurális PBR textúrák:** 256x256-os domborzati és kő textúrák, fa gerendák, izzó meteor lövedék.
   - **Asztali 3D Sandbox Mód:** Bármely böngészőben azonnal játszható virtuális fa asztallal és egérrel/érintéssel.
   - **Vizuális effektek:** Kőtörmelék és füstfelhő, gazdag Web Audio szintetizált hangeffektek (feszülés, suhanás, becsapódás, pontszerzés).
-- [x] **10. Fázis:** Teljes Rendszerszintű Finomítás és Tisztítás:
-  - **Szemétgyűjtő (GC) és Memóriaprofil:** `updateScore()` és `phonePull` 0 memóriafoglalásra optimalizálva (`tempUpVector`, `tempCamDelta`), füstrészecskék klónozott anyagainak azonnali `dispose()`-ja.
-  - **Maradék lövedékek kezelése (`clearAllProjectiles`):** Vár újraépítésekor, elrendezésváltáskor és újrakezdéskor a játéktéren heverő korábbi lövedékek automatikusan törlődnek, kizárva a téglákkal való ütközési glitch-eket.
-  - **Biztonsági impulzus-számítás:** Becsapódási sebességvektor normalizálása 0 sebesség esetén védett, megelőzve a NaN értékeket.
-  - **Kamera-elérési robusztusság:** Natív `getUserMedia` fallback beépítése arra az esetre, ha a külső `@mediapipe/camera_utils` nem töltődne be.
-  - **Web Audio késleltetés megszüntetése:** Automatikus AudioContext aktiválás az első felhasználói koppintásra mobil böngészőkön.
+- [x] **10. Fázis:** Teljes Rendszerszintű Finomítás és Tisztítás (GC optimalizálás, audio unlock, lövedékkezelés).
+- [x] **11. Fázis:** Felületi Pásztázás, Könnyített Lehelyezés és Kameraközpontú UI Átdolgozás:
+  - **Animált Területi Pásztázás (SurfaceScanner):** A felületkereséskor dinamikus sonárhullámok tágulnak a felületen (`RingGeometry` animációval), hatszögletű holografikus szkennelési rács, forgó külső irányzék és lézer célkereszt ad valós idejű visszajelzést a sík detektálásáról.
+  - **3D Szellem Előnézet (Holographic Blueprint Ghost):** Mind a 4 vártípushoz (`Fortress`, `Pyramid`, `Twin Towers`, `Citadel`) és a csúzlihoz is áttetsző, ciánkék holografikus előnézet készült. A játékos pontosan látja az építmény körvonalát az asztalon a lehelyezés előtt.
+  - **1-Koppintásos "Auto csúzli" lehelyezés:** A vár lehelyezése után a katapult azonnal lehelyezhető egyetlen koppintással optimális távolságra (50 cm), megelőzve az AR térbeli keresgélést szűkös felületeken.
+  - **100%-ban Kitakarásmentes Kameraközép:** Eltávolítva a képernyő közepét takaró feszítőgomb, útmutató szövegdoboz és nyíl. Az útmutatók diszkrét mini pillként a fejléc alatt helyezkednek el, a telefonmozgás módhoz pedig egy kézreálló, jobb alsó sarokba dokkolt hüvelykujj-gomb (FAB) tartozik.
+  - **Szelfi Kamera Tartalmának Teljes Eltüntetése:** A kézkövetés módban a webkamera előnézeti ablaka és videóképe SOHA nem jelenik meg a felhasználó előtt. A képfeldolgozás tisztán a háttérben fut az AI kézfelismeréshez, a HUD-on pedig csak egy diszkrét állapotjelző látható.
+  - **Asztali 3D Körbejárás (OrbitControls):** Asztali és előnézeti módban a felhasználó 360 fokban körbejárhatja és nagyíthatja a virtuális asztalt egérrel, míg a csúzli megfogásakor az orbit vezérlés intelligensen szünetel.
+
+- [x] **12. Fázis:** Rendszerszintű Finomítás, Stabilitás és Minőségi Javítások:
+  - **Fizika & Előrejelzés Pontosság:** A fizikai konstansok (`PHYSICS_DT`, `GRAVITY`, `PROJECTILE_DAMPING`) egységesítve lettek a Cannon motor és a trajektória-számítás között. A röppálya pontosan a golyó sugarával (`radius`) kalkulálja az asztallap becsapódását.
+  - **Vár Forgatás & Tervek:** A vár és a szellemelőnézet lerakáskor automatikusan a játékos felé fordul (`yaw`). Egyetlen közös elrendezés-leíró forrás vezérli a várat és az előnézetet, megszüntetve a redundanciát. Az újraépítés megtartja az aktuális vártípust.
+  - **Közös Slingshot Célzó API:** Egységes `beginAim()`, `setPull()`, `endAim()` interfész vezérli mind a három módot (Érintés, Telefonmozgás, Kézkövetés). Megszűntek a duplikált kódok, hozzáadva a rugós visszacsapódás- és újratöltés-animációt, valamint a pulzáló irányzékot.
+  - **Pointer Events Átállás:** A korábbi egér + érintés párhuzamos figyelése helyett modern W3C Pointer Events fut capture fázisban, megelőzve az orbit kamera véletlen elfordulását célzás közben mobilon és asztalon.
+  - **Robusztus Kézkövetés:** Skálafüggetlen hiszterézis csippentés-detektálás (kézmérethez normalizálva), EMA zajszűrés a kézremegés ellen, biztonságos kamera- és szálkezelés.
+  - **Hang- és Részecskekezelés:** Mester audió busz dinamika-kompresszorral (torzításmentes egyidejű becsapódások), ritkított pontszám-csengetés, perzisztens némításbeállítás (`localStorage`), hálókészlet-újrahasznosítás (pooling) a részecskerendszerben, és megpattanó kőtörmelék.
+  - **HTML & UI Tisztítás:** Kijavítva a beágyazott unclosed badge hiba a fejlécben, és perzisztens rekord pontszám (`highScore`) kezelés bevezetve.
 
 ---
 
 ## 5. Elvégzett Tesztek és Verifikáció
-- **3D Render & Fizika:** A Three.js és Cannon-es világ stabil 60 FPS-sel fut, 0 spontán mozgás vagy omlás.
-- **Konzol Napló:** 0 hiba és 0 figyelmeztetés a betöltéskor és interakciók során.
-- **Böngészős tesztelés (Browser Subagent):** Célzás, hátrahúzás, 3D gumiszalag nyúlás, kilövés, kőomlás becsapódáskor, pontszám növekedés (`PONT: 50`), és az építmények váltása (`Citadel`, `Pyramid`, `Fortress`) sikeresen ellenőrizve.
-- **Produkciós build:** `npm run build` hiba nélkül, sikeresen lefut (Vite v8.3.0).
-- **Fejlesztői szerver:** Elérhető helyben a `http://localhost:5173/` címen, illetve helyi hálózaton a telefonos teszteléshez a `http://192.168.0.108:5173/` címen.
+- **3D Render & Fizika:** A Three.js és Cannon-es világ stabil 60 FPS-sel fut, a fizikai lépés és a röppálya-előrejelzés 1:1 szinkronban van.
+- **Produkciós build:** `npm run build` hiba nélkül lefutott (15 modul transzformálva, ~613 ms).
+- **Fejlesztői szerver:** Elérhető helyben a `http://localhost:5173/` címen.
 
 ---
-*Utolsó frissítés: Teljes rendszerszintű optimalizálás és finomítás befejezve.*
+*Utolsó frissítés: 12. Fázis befejezve – teljes rendszerszintű optimalizálás és funkciójavítás.*
+

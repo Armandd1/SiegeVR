@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { BLOCK_SIZE } from './physics.js';
 
+export const CASTLE_LAYOUTS = ['fortress', 'pyramid', 'twin_towers', 'citadel'];
+const PLINTH_SIZE = { x: 0.82, z: 0.62 };
+
 export class CastleBuilder {
   constructor(scene, physics) {
     this.scene = scene;
@@ -9,7 +12,13 @@ export class CastleBuilder {
     this.foundationMeshes = [];
     this.baseOffsetY = 0.025; // 2.5 cm-es megerősített kőtalapzat
 
+    // A vár aktuális állapota (pozíció, elforgatás, típus) – az újraépítés ugyanezt állítja vissza
+    this.currentLayout = null;
+    this.origin = new THREE.Vector3();
+    this.yaw = 0;
+
     this.boxGeometry = new THREE.BoxGeometry(BLOCK_SIZE.x, BLOCK_SIZE.y, BLOCK_SIZE.z);
+    this.plinthGeometry = new THREE.BoxGeometry(PLINTH_SIZE.x, this.baseOffsetY, PLINTH_SIZE.z);
     this.createMaterials();
   }
 
@@ -65,10 +74,17 @@ export class CastleBuilder {
     const stoneTex = new THREE.CanvasTexture(stoneCanvas);
     stoneTex.wrapS = THREE.RepeatWrapping;
     stoneTex.wrapT = THREE.RepeatWrapping;
+    stoneTex.colorSpace = THREE.SRGBColorSpace;
+    stoneTex.anisotropy = 4;
+
+    // A domborzati térkép lineáris adat, ezért külön textúra példányt kap (nem sRGB)
+    const bumpTex = new THREE.CanvasTexture(stoneCanvas);
+    bumpTex.wrapS = THREE.RepeatWrapping;
+    bumpTex.wrapT = THREE.RepeatWrapping;
 
     this.stoneMaterial = new THREE.MeshStandardMaterial({
       map: stoneTex,
-      bumpMap: stoneTex,
+      bumpMap: bumpTex,
       bumpScale: 0.003,
       roughness: 0.8,
       metalness: 0.1
@@ -105,49 +121,204 @@ export class CastleBuilder {
       wCtx.stroke();
     }
     const woodTex = new THREE.CanvasTexture(woodCanvas);
+    woodTex.colorSpace = THREE.SRGBColorSpace;
 
     this.woodMaterial = new THREE.MeshStandardMaterial({
       map: woodTex,
       roughness: 0.85,
       metalness: 0.05
     });
+
+    this.materialsByKey = {
+      stone: this.stoneMaterial,
+      wood: this.woodMaterial,
+      accent: this.accentMaterial
+    };
+
+    // 5. Holografikus szellem előnézet anyagok (Kék/cián áttetsző tervrajz)
+    this.ghostMaterial = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false
+    });
+    this.ghostEdgeMaterial = new THREE.LineBasicMaterial({
+      color: 0x7dd3fc,
+      transparent: true,
+      opacity: 0.85
+    });
+    this.boxEdgesGeo = new THREE.EdgesGeometry(this.boxGeometry);
+    this.plinthEdgesGeo = new THREE.EdgesGeometry(this.plinthGeometry);
+
+    this.ghostGroup = new THREE.Group();
+    this.ghostGroup.visible = false;
+    this.ghostLayout = null;
+    this.scene.add(this.ghostGroup);
   }
 
-  buildCastleAt(originPos, forceLayout = null) {
+  // Holografikus előnézet megjelenítése a célzó pozíciónál
+  showGhost(originPos, layout = null, yaw = this.yaw) {
+    const layoutToPreview = layout || this.currentLayout || 'fortress';
+    if (this.ghostLayout !== layoutToPreview) {
+      this.rebuildGhostModel(layoutToPreview);
+    }
+    this.ghostGroup.position.copy(originPos);
+    this.ghostGroup.rotation.y = yaw;
+    this.ghostGroup.visible = true;
+  }
+
+  hideGhost() {
+    this.ghostGroup.visible = false;
+  }
+
+  updateGhostPosition(worldPos, yaw = null) {
+    if (this.ghostGroup.visible) {
+      this.ghostGroup.position.copy(worldPos);
+      if (yaw !== null) this.ghostGroup.rotation.y = yaw;
+    }
+  }
+
+  rebuildGhostModel(layoutName) {
+    // Korábbi szellemelemek eltávolítása (minden geometria megosztott, nincs mit felszabadítani)
+    this.ghostGroup.clear();
+    this.ghostLayout = layoutName;
+
+    // 1. Kő talapzat szellem
+    const plinthY = this.baseOffsetY / 2;
+    const plinthMesh = new THREE.Mesh(this.plinthGeometry, this.ghostMaterial);
+    plinthMesh.position.set(0, plinthY, 0);
+    this.ghostGroup.add(plinthMesh);
+
+    const plinthEdges = new THREE.LineSegments(this.plinthEdgesGeo, this.ghostEdgeMaterial);
+    plinthEdges.position.set(0, plinthY, 0);
+    this.ghostGroup.add(plinthEdges);
+
+    // 2. Blokkok előnézete a vártípus alapján
+    for (const b of this.getLayoutSpec(layoutName)) {
+      const mesh = new THREE.Mesh(this.boxGeometry, this.ghostMaterial);
+      mesh.position.set(b.x, b.y, b.z);
+      this.ghostGroup.add(mesh);
+
+      const edges = new THREE.LineSegments(this.boxEdgesGeo, this.ghostEdgeMaterial);
+      edges.position.set(b.x, b.y, b.z);
+      this.ghostGroup.add(edges);
+    }
+  }
+
+  // Egyetlen igazságforrás minden vártípushoz: helyi koordináták + anyag + tömeg.
+  // A valós vár és a szellem előnézet is ebből épül, így soha nem térhetnek el egymástól.
+  getLayoutSpec(layoutName) {
+    const bx = BLOCK_SIZE.x;
+    const by = BLOCK_SIZE.y;
+    const bz = BLOCK_SIZE.z;
+    const layerY = (layer) => this.baseOffsetY + by / 2 + layer * by;
+    const spec = [];
+    const add = (x, layer, z, mat, mass) => spec.push({ x, y: layerY(layer), z, mat, mass });
+
+    switch (layoutName) {
+      // 2. ELRENDEZÉS: Sziklaszilárd Zikkurat Lépcsős Piramis
+      case 'pyramid': {
+        const maxLayers = 4;
+        for (let layer = 0; layer < maxLayers; layer++) {
+          const count = maxLayers - layer + 1; // 5 -> 4 -> 3 -> 2
+          const startX = -((count - 1) * bx) / 2;
+          const mat = layer === maxLayers - 1 ? 'accent' : 'stone';
+          for (let i = 0; i < count; i++) {
+            add(startX + i * bx, layer, 0, mat, 1.15 - layer * 0.18);
+          }
+        }
+        add(0, maxLayers, 0, 'accent', 0.4); // Csúcsbástya
+        break;
+      }
+
+      // 3. ELRENDEZÉS: Két Bástyatorony Masszív Áthidalóval
+      case 'twin_towers': {
+        const towerH = 4;
+        const half = bx; // a két torony pontosan 2 kő távolságra
+        for (let layer = 0; layer < towerH; layer++) {
+          const mass = 1.1 - layer * 0.12;
+          add(-half, layer, 0, 'stone', mass);
+          add(half, layer, 0, 'stone', mass);
+          if (layer === 1) add(0, layer, 0, 'stone', 0.9);      // kő áthidaló a kapu fölött
+          else if (layer === 2) add(0, layer, 0, 'wood', 0.6);  // fa függőhíd
+        }
+        add(-half, towerH, 0, 'accent', 0.45);
+        add(half, towerH, 0, 'accent', 0.45);
+        break;
+      }
+
+      // 4. ELRENDEZÉS: 3D Erőd Citadella
+      case 'citadel': {
+        for (let layer = 0; layer < 3; layer++) {
+          for (let r = -1; r <= 1; r++) {
+            for (let c = -1; c <= 1; c++) {
+              if (layer === 1 && r === 0 && c === 0) continue;
+              add(c * bx, layer, r * bz, 'stone', 1.1 - layer * 0.15);
+            }
+          }
+        }
+        // 4 sarokbástya + központi őrtorony
+        [-1, 1].forEach(r => [-1, 1].forEach(c => add(c * bx, 3, r * bz, 'accent', 0.4)));
+        add(0, 3, 0, 'wood', 0.55);
+        break;
+      }
+
+      // 1. ELRENDEZÉS: Széles Várfal Kapuval és Bástyafokokkal (lentről felfelé csökkenő tömeg)
+      case 'fortress':
+      default: {
+        for (let c = 0; c < 5; c++) {
+          if (c === 2) continue; // kapu rés
+          add((c - 2) * bx, 0, 0, 'stone', 1.15);
+        }
+        for (let c = 0; c < 4; c++) {
+          add((c - 1.5) * bx, 1, 0, (c === 1 || c === 2) ? 'wood' : 'stone', 0.95); // áthidaló gerenda
+        }
+        for (let c = 0; c < 5; c++) add((c - 2) * bx, 2, 0, 'stone', 0.85);
+        for (let c = 0; c < 4; c++) add((c - 1.5) * bx, 3, 0, 'stone', 0.75);
+        [-1.5, -0.5, 0.5, 1.5].forEach(o => add(o * bx, 4, 0, 'accent', 0.45)); // bástyafokok
+        break;
+      }
+    }
+
+    return spec;
+  }
+
+  buildCastleAt(originPos, forceLayout = null, yaw = this.yaw) {
+    this.hideGhost();
     this.clear();
+
+    this.origin.copy(originPos);
+    this.yaw = yaw;
 
     // Frissítjük a fizikai talajt pontosan a vár alapjának magasságára
     this.physics.setGroundHeight(originPos.y);
 
     // Kő udvar / talapzat lehelyezése, ami garantálja a 100%-os stabilitást
-    this.createPlinth(originPos);
+    this.createPlinth();
 
-    const layouts = ['fortress', 'pyramid', 'twin_towers', 'citadel'];
-    this.currentLayout = forceLayout || layouts[Math.floor(Math.random() * layouts.length)];
-    console.log(`🏰 Stabil vár építése: [${this.currentLayout}] @`, originPos);
+    // A kiválasztott (vagy előnézetben beállított) típus megmarad – csak legelső építéskor véletlenszerű
+    this.currentLayout = forceLayout || this.currentLayout
+      || CASTLE_LAYOUTS[Math.floor(Math.random() * CASTLE_LAYOUTS.length)];
 
-    switch (this.currentLayout) {
-      case 'pyramid':
-        this.buildPyramid(originPos);
-        break;
-      case 'twin_towers':
-        this.buildTwinTowers(originPos);
-        break;
-      case 'citadel':
-        this.buildCitadel(originPos);
-        break;
-      case 'fortress':
-      default:
-        this.buildFortress(originPos);
-        break;
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    for (const b of this.getLayoutSpec(this.currentLayout)) {
+      // Helyi -> világ koordináta a vár Y tengely körüli elforgatásával
+      const wx = originPos.x + b.x * cos + b.z * sin;
+      const wz = originPos.z - b.x * sin + b.z * cos;
+      this.createBlock(wx, originPos.y + b.y, wz, this.materialsByKey[b.mat], b.mass);
     }
   }
 
-  cycleNextLayout(originPos) {
-    const layouts = ['fortress', 'pyramid', 'twin_towers', 'citadel'];
-    const currentIndex = layouts.indexOf(this.currentLayout);
-    const nextIndex = (currentIndex + 1) % layouts.length;
-    this.buildCastleAt(originPos, layouts[nextIndex]);
+  // Ugyanaz a vár, ugyanott, ugyanabban az irányban
+  rebuild() {
+    this.buildCastleAt(this.origin, this.currentLayout, this.yaw);
+  }
+
+  cycleNextLayout(originPos = this.origin) {
+    const currentIndex = CASTLE_LAYOUTS.indexOf(this.currentLayout);
+    const nextIndex = (currentIndex + 1) % CASTLE_LAYOUTS.length;
+    this.buildCastleAt(originPos, CASTLE_LAYOUTS[nextIndex], this.yaw);
     return this.getLayoutTitle();
   }
 
@@ -162,17 +333,17 @@ export class CastleBuilder {
   }
 
   // Stabil kőtalapzat a vár alá, ami összefogja az árnyékokat és valós fizikai alátámasztást ad
-  createPlinth(origin) {
-    const plinthSize = { x: 0.82, y: this.baseOffsetY, z: 0.62 };
-    const plinthGeo = new THREE.BoxGeometry(plinthSize.x, plinthSize.y, plinthSize.z);
-    const plinthMesh = new THREE.Mesh(plinthGeo, this.foundationMaterial);
-    const plinthPos = { x: origin.x, y: origin.y + plinthSize.y / 2, z: origin.z };
+  createPlinth() {
+    const plinthSize = { x: PLINTH_SIZE.x, y: this.baseOffsetY, z: PLINTH_SIZE.z };
+    const plinthMesh = new THREE.Mesh(this.plinthGeometry, this.foundationMaterial);
+    const plinthPos = { x: this.origin.x, y: this.origin.y + plinthSize.y / 2, z: this.origin.z };
     plinthMesh.position.set(plinthPos.x, plinthPos.y, plinthPos.z);
+    plinthMesh.rotation.y = this.yaw;
     plinthMesh.receiveShadow = true;
     plinthMesh.userData.isFoundation = true;
 
     this.scene.add(plinthMesh);
-    this.physics.addPlinth(plinthMesh, plinthPos, plinthSize);
+    this.physics.addPlinth(plinthMesh, plinthPos, plinthSize, this.yaw);
     this.foundationMeshes.push(plinthMesh);
   }
 
@@ -181,154 +352,14 @@ export class CastleBuilder {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.position.set(worldX, worldY, worldZ);
+    mesh.rotation.y = this.yaw;
     mesh.userData.isCastleBlock = true;
     mesh.userData.initialPos = new THREE.Vector3(worldX, worldY, worldZ);
     mesh.userData.initialQuat = mesh.quaternion.clone();
 
     this.scene.add(mesh);
-    this.physics.addBox(mesh, { x: worldX, y: worldY, z: worldZ }, mass, true);
+    this.physics.addBox(mesh, { x: worldX, y: worldY, z: worldZ }, mass, true, this.yaw);
     this.blocks.push(mesh);
-  }
-
-  // 1. ELRENDEZÉS: Széles Várfal Kapuval és Bástyafokokkal
-  buildFortress(origin) {
-    const bx = BLOCK_SIZE.x;
-    const by = BLOCK_SIZE.y;
-    const baseOffsetY = this.baseOffsetY;
-    const rows = 4;
-    const cols = 5;
-
-    // Rétegek építése stabil kötésben, lentről felfelé csökkenő tömeggel a stabil súlypontért
-    for (let layer = 0; layer < rows; layer++) {
-      const y = origin.y + baseOffsetY + by / 2 + layer * by;
-
-      if (layer === 0) {
-        // Földszint: 5 nehéz kő, középen a kapu nyílás (alul a legnehezebb: 1.15 kg)
-        const startX = origin.x - 2 * bx;
-        for (let c = 0; c < cols; c++) {
-          if (c === 2) continue; // kapu rés
-          this.createBlock(startX + c * bx, y, origin.z, this.stoneMaterial, 1.15);
-        }
-      } else if (layer === 1) {
-        // 1. emelet: masszív áthidaló gerenda a kapu fölött + oldalsó kőtömbök
-        const startX = origin.x - 1.5 * bx;
-        for (let c = 0; c < 4; c++) {
-          const x = startX + c * bx;
-          const mat = (c === 1 || c === 2) ? this.woodMaterial : this.stoneMaterial;
-          this.createBlock(x, y, origin.z, mat, 0.95);
-        }
-      } else if (layer === 2) {
-        // 2. emelet: 5 kőtömb folyamatos kötésben
-        const startX = origin.x - 2 * bx;
-        for (let c = 0; c < cols; c++) {
-          this.createBlock(startX + c * bx, y, origin.z, this.stoneMaterial, 0.85);
-        }
-      } else if (layer === 3) {
-        // 3. emelet: 4 kőtömb zárófal
-        const startX = origin.x - 1.5 * bx;
-        for (let c = 0; c < 4; c++) {
-          this.createBlock(startX + c * bx, y, origin.z, this.stoneMaterial, 0.75);
-        }
-      }
-    }
-
-    // Bástyafokok a tetőre, pontosan a tartókövek tetejére (könnyebb díszek: 0.45 kg)
-    const topY = origin.y + baseOffsetY + by / 2 + rows * by;
-    this.createBlock(origin.x - 1.5 * bx, topY, origin.z, this.accentMaterial, 0.45);
-    this.createBlock(origin.x - 0.5 * bx, topY, origin.z, this.accentMaterial, 0.45);
-    this.createBlock(origin.x + 0.5 * bx, topY, origin.z, this.accentMaterial, 0.45);
-    this.createBlock(origin.x + 1.5 * bx, topY, origin.z, this.accentMaterial, 0.45);
-  }
-
-  // 2. ELRENDEZÉS: Sziklaszilárd Zikkurat Lépcsős Piramis
-  buildPyramid(origin) {
-    const bx = BLOCK_SIZE.x;
-    const by = BLOCK_SIZE.y;
-    const baseOffsetY = this.baseOffsetY;
-    const maxLayers = 4;
-
-    for (let layer = 0; layer < maxLayers; layer++) {
-      const y = origin.y + baseOffsetY + by / 2 + layer * by;
-      const count = maxLayers - layer + 1; // 5 -> 4 -> 3 -> 2
-      const startX = origin.x - ((count - 1) * bx) / 2;
-      const layerMass = 1.15 - layer * 0.18;
-
-      for (let i = 0; i < count; i++) {
-        const x = startX + i * bx;
-        const mat = (layer === maxLayers - 1) ? this.accentMaterial : this.stoneMaterial;
-        this.createBlock(x, y, origin.z, mat, layerMass);
-      }
-    }
-
-    // Csúcsbástya
-    const topY = origin.y + baseOffsetY + by / 2 + maxLayers * by;
-    this.createBlock(origin.x, topY, origin.z, this.accentMaterial, 0.4);
-  }
-
-  // 3. ELRENDEZÉS: Két Bástyatorony Masszív Áthidalóval
-  buildTwinTowers(origin) {
-    const bx = BLOCK_SIZE.x;
-    const by = BLOCK_SIZE.y;
-    const baseOffsetY = this.baseOffsetY;
-    const towerH = 4;
-    const towerDist = bx * 2; // Pontosan 2 kő távolság
-
-    for (let layer = 0; layer < towerH; layer++) {
-      const y = origin.y + baseOffsetY + by / 2 + layer * by;
-      const layerMass = 1.1 - layer * 0.12;
-
-      // Bal torony
-      this.createBlock(origin.x - towerDist / 2, y, origin.z, this.stoneMaterial, layerMass);
-      // Jobb torony
-      this.createBlock(origin.x + towerDist / 2, y, origin.z, this.stoneMaterial, layerMass);
-
-      // 1. szint: masszív kő áthidaló a kapu fölött
-      if (layer === 1) {
-        this.createBlock(origin.x, y, origin.z, this.stoneMaterial, 0.9);
-      }
-      // 2. szint: fa függőhíd a kő áthidalóra támaszkodva a két torony között
-      else if (layer === 2) {
-        this.createBlock(origin.x, y, origin.z, this.woodMaterial, 0.6);
-      }
-    }
-
-    // Tetődíszek a tornyok tetején
-    const topY = origin.y + baseOffsetY + by / 2 + towerH * by;
-    this.createBlock(origin.x - towerDist / 2, topY, origin.z, this.accentMaterial, 0.45);
-    this.createBlock(origin.x + towerDist / 2, topY, origin.z, this.accentMaterial, 0.45);
-  }
-
-  // 4. ELRENDEZÉS: 3D Erőd Citadella
-  buildCitadel(origin) {
-    const bx = BLOCK_SIZE.x;
-    const by = BLOCK_SIZE.y;
-    const bz = BLOCK_SIZE.z;
-    const baseOffsetY = this.baseOffsetY;
-
-    for (let layer = 0; layer < 3; layer++) {
-      const y = origin.y + baseOffsetY + by / 2 + layer * by;
-      const layerMass = 1.1 - layer * 0.15;
-
-      for (let r = -1; r <= 1; r++) {
-        for (let c = -1; c <= 1; c++) {
-          if (layer === 1 && r === 0 && c === 0) continue;
-          const x = origin.x + c * bx;
-          const z = origin.z + r * bz;
-          this.createBlock(x, y, z, this.stoneMaterial, layerMass);
-        }
-      }
-    }
-
-    // 4 sarokbástya a tetőre
-    const topY = origin.y + baseOffsetY + by / 2 + 3 * by;
-    [-1, 1].forEach(r => {
-      [-1, 1].forEach(c => {
-        this.createBlock(origin.x + c * bx, topY, origin.z + r * bz, this.accentMaterial, 0.4);
-      });
-    });
-
-    // Központi őrtorony (szilárdan a 2. szint zárófödémére támaszkodik)
-    this.createBlock(origin.x, topY, origin.z, this.woodMaterial, 0.55);
   }
 
   clear() {
@@ -336,9 +367,9 @@ export class CastleBuilder {
     for (const mesh of this.blocks) {
       this.scene.remove(mesh);
     }
+    // A talapzat geometriája megosztott, ezért nem szabadítjuk fel
     for (const p of this.foundationMeshes) {
       this.scene.remove(p);
-      if (p.geometry) p.geometry.dispose();
     }
     this.blocks = [];
     this.foundationMeshes = [];

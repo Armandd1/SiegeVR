@@ -1,34 +1,34 @@
-// Hand Tracking Rendszer: WebXR Natív Kézkövetés + MediaPipe Hands Webkamera Integráció
+// Hand Tracking Rendszer: WebXR Natív Kézkövetés + MediaPipe Hands Láthatatlan Háttérfeldolgozás
 export class HandTracker {
-  constructor(onPinchStart, onPinchMove, onPinchEnd) {
+  constructor(onPinchStart, onPinchMove, onPinchEnd, onStatusChange = null) {
     this.onPinchStart = onPinchStart;
     this.onPinchMove = onPinchMove;
     this.onPinchEnd = onPinchEnd;
+    this.onStatusChange = onStatusChange;
 
     this.isActive = false;
     this.isPinching = false;
     this.pinchAnchor = { x: 0, y: 0, z: 0 };
+    this.smoothedMid = { x: 0, y: 0, z: 0 };
 
     this.videoElement = null;
-    this.pipCanvas = null;
-    this.pipCtx = null;
     this.cameraUtils = null;
     this.mediaPipeHands = null;
-
-    this.xrHand = null;
+    this.stream = null;
+    this.animFrameId = null;
   }
 
-  initDOM(videoEl, canvasEl) {
+  initDOM(videoEl) {
     this.videoElement = videoEl;
-    this.pipCanvas = canvasEl;
-    if (this.pipCanvas) {
-      this.pipCtx = this.pipCanvas.getContext('2d');
+    if (this.videoElement) {
+      this.videoElement.style.display = 'none'; // Szigorúan háttérben fut, semmilyen képernyőtartalom nem jelenik meg!
     }
   }
 
   async start() {
     if (this.isActive) return;
     this.isActive = true;
+    if (this.onStatusChange) this.onStatusChange({ active: true, handDetected: false, isPinching: false });
 
     // 1. Megvizsgáljuk, hogy elérhető-e a MediaPipe globálisan
     if (typeof window.Hands !== 'undefined' && this.videoElement) {
@@ -43,6 +43,12 @@ export class HandTracker {
   stop() {
     this.isActive = false;
     this.isPinching = false;
+    if (this.onStatusChange) this.onStatusChange({ active: false, handDetected: false, isPinching: false });
+
+    if (this.animFrameId) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+    }
 
     if (this.cameraUtils) {
       try {
@@ -51,32 +57,39 @@ export class HandTracker {
       this.cameraUtils = null;
     }
 
-    if (this.videoElement && this.videoElement.srcObject) {
+    if (this.stream) {
       try {
-        const tracks = this.videoElement.srcObject.getTracks();
-        tracks.forEach(track => track.stop());
+        this.stream.getTracks().forEach(track => track.stop());
       } catch (e) {}
-      this.videoElement.srcObject = null;
+      this.stream = null;
     }
 
-    if (this.pipCanvas && this.pipCtx) {
-      this.pipCtx.clearRect(0, 0, this.pipCanvas.width, this.pipCanvas.height);
+    if (this.videoElement) {
+      try {
+        if (this.videoElement.srcObject) {
+          const tracks = this.videoElement.srcObject.getTracks();
+          tracks.forEach(track => track.stop());
+        }
+      } catch (e) {}
+      this.videoElement.srcObject = null;
     }
   }
 
   async initMediaPipe() {
-    this.mediaPipeHands = new window.Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-    });
+    if (!this.mediaPipeHands) {
+      this.mediaPipeHands = new window.Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
 
-    this.mediaPipeHands.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.65,
-      minTrackingConfidence: 0.65
-    });
+      this.mediaPipeHands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.65,
+        minTrackingConfidence: 0.65
+      });
 
-    this.mediaPipeHands.onResults(this.onMediaPipeResults.bind(this));
+      this.mediaPipeHands.onResults(this.onMediaPipeResults.bind(this));
+    }
 
     if (window.Camera && this.videoElement) {
       this.cameraUtils = new window.Camera(this.videoElement, {
@@ -91,10 +104,10 @@ export class HandTracker {
       await this.cameraUtils.start();
     } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && this.videoElement) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        this.stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user', width: 320, height: 240 }
         });
-        this.videoElement.srcObject = stream;
+        this.videoElement.srcObject = this.stream;
         await this.videoElement.play();
 
         const processFrame = async () => {
@@ -105,10 +118,12 @@ export class HandTracker {
             }
           } catch (e) {}
 
-          if ('requestVideoFrameCallback' in this.videoElement) {
-            this.videoElement.requestVideoFrameCallback(processFrame);
-          } else {
-            requestAnimationFrame(processFrame);
+          if (this.isActive) {
+            if ('requestVideoFrameCallback' in this.videoElement) {
+              this.videoElement.requestVideoFrameCallback(processFrame);
+            } else {
+              this.animFrameId = requestAnimationFrame(processFrame);
+            }
           }
         };
         processFrame();
@@ -121,26 +136,10 @@ export class HandTracker {
   onMediaPipeResults(results) {
     if (!this.isActive) return;
 
-    // PIP kis előnézeti vászon kirajzolása
-    if (this.pipCanvas && this.pipCtx) {
-      this.pipCanvas.width = 160;
-      this.pipCanvas.height = 120;
-      this.pipCtx.save();
-      this.pipCtx.clearRect(0, 0, this.pipCanvas.width, this.pipCanvas.height);
-
-      // Tükrözött kamerakép
-      this.pipCtx.translate(this.pipCanvas.width, 0);
-      this.pipCtx.scale(-1, 1);
-      this.pipCtx.drawImage(results.image, 0, 0, this.pipCanvas.width, this.pipCanvas.height);
-
-      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        const landmarks = results.multiHandLandmarks[0];
-        this.drawSkeleton(landmarks);
-      }
-      this.pipCtx.restore();
-    }
-
+    // FONTOS: A felhasználói kérésnek megfelelően a szelfi kamera tartalma
+    // SOHA nem jelenik meg a képernyőn! A videó kizárólag a háttérben fut az AI felismeréshez.
     if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+      if (this.onStatusChange) this.onStatusChange({ active: true, handDetected: false, isPinching: false });
       if (this.isPinching) {
         this.isPinching = false;
         if (this.onPinchEnd) this.onPinchEnd(false);
@@ -149,8 +148,13 @@ export class HandTracker {
     }
 
     const landmarks = results.multiHandLandmarks[0];
+    const wrist = landmarks[0];
+    const middleMcp = landmarks[9];
     const thumb = landmarks[4];  // Hüvelykujj hegye
     const index = landmarks[8];  // Mutatóujj hegye
+
+    // Kéz méretének skálázási alapja (csukló és középső ujj tő távolsága)
+    const handScale = Math.hypot(wrist.x - middleMcp.x, wrist.y - middleMcp.y) || 0.2;
 
     // Csippentési távolság számítása (3D Euklideszi távolság)
     const dx = thumb.x - index.x;
@@ -158,26 +162,32 @@ export class HandTracker {
     const dz = (thumb.z - index.z) || 0;
     const pinchDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-    const pinchMid = {
+    const rawMid = {
       x: (thumb.x + index.x) / 2,
       y: (thumb.y + index.y) / 2,
       z: (thumb.z + index.z) / 2
     };
 
-    const PINCH_THRESHOLD = 0.085;
+    // Aluláteresztő simítás (EMA) kézremegés ellen
+    const alpha = 0.55;
+    this.smoothedMid.x = this.smoothedMid.x * (1 - alpha) + rawMid.x * alpha;
+    this.smoothedMid.y = this.smoothedMid.y * (1 - alpha) + rawMid.y * alpha;
+    this.smoothedMid.z = this.smoothedMid.z * (1 - alpha) + rawMid.z * alpha;
 
-    // Csippentés állapota
-    if (pinchDist < PINCH_THRESHOLD) {
+    // Skála-független csippentési küszöb hiszterézissel (be: 0.32 * kézméret, ki: 0.42 * kézméret)
+    const pinchRatio = pinchDist / handScale;
+    const shouldPinch = this.isPinching ? pinchRatio < 0.42 : pinchRatio < 0.32;
+
+    if (shouldPinch) {
       if (!this.isPinching) {
         this.isPinching = true;
-        this.pinchAnchor = { ...pinchMid };
-        if (this.onPinchStart) this.onPinchStart(pinchMid);
+        this.pinchAnchor = { ...this.smoothedMid };
+        if (this.onPinchStart) this.onPinchStart(this.smoothedMid);
       } else {
-        // Mozgatás az eredeti rögzítési ponthoz képest
-        // Tükrözött koordináták: ha a kéz jobbra mozog, x csökken
-        const deltaX = (this.pinchAnchor.x - pinchMid.x) * 2.2;
-        const deltaY = (pinchMid.y - this.pinchAnchor.y) * 2.2; // lefelé húzás
-        const deltaZ = (pinchMid.z - this.pinchAnchor.z) * 3.0; // hátrahúzás mélységben
+        // Mozgatás az eredeti rögzítési ponthoz képest (invertált X a tükörkép miatt)
+        const deltaX = (this.pinchAnchor.x - this.smoothedMid.x) * 2.2;
+        const deltaY = (this.smoothedMid.y - this.pinchAnchor.y) * 2.2;
+        const deltaZ = (this.pinchAnchor.z - this.smoothedMid.z) * 2.8;
 
         if (this.onPinchMove) {
           this.onPinchMove({ x: deltaX, y: deltaY, z: deltaZ });
@@ -189,24 +199,10 @@ export class HandTracker {
         if (this.onPinchEnd) this.onPinchEnd(true);
       }
     }
-  }
 
-  drawSkeleton(landmarks) {
-    const ctx = this.pipCtx;
-    const w = this.pipCanvas.width;
-    const h = this.pipCanvas.height;
-
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 2;
-    ctx.fillStyle = this.isPinching ? '#ef4444' : '#22c55e';
-
-    // Csippentő ujjvégek kiemelése
-    [4, 8].forEach(idx => {
-      const pt = landmarks[idx];
-      ctx.beginPath();
-      ctx.arc(pt.x * w, pt.y * h, this.isPinching ? 6 : 4, 0, Math.PI * 2);
-      ctx.fill();
-    });
+    if (this.onStatusChange) {
+      this.onStatusChange({ active: true, handDetected: true, isPinching: this.isPinching });
+    }
   }
 
   // WebXR Natív Hand Tracking frissítés minden render képkockában
@@ -233,7 +229,7 @@ export class HandTracker {
               z: (p1.z + p2.z) / 2
             };
 
-            const XR_PINCH_DIST = 0.035; // 3.5 cm
+            const XR_PINCH_DIST = 0.038; // 3.8 cm
 
             if (dist < XR_PINCH_DIST) {
               if (!this.isPinching) {
