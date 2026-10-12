@@ -32,6 +32,8 @@ class WebXRApp {
     this.handStatusBadge = document.getElementById('hand-status-badge');
     this.handStatusLabel = document.getElementById('hand-status-label');
     this.btnAutoSlingshot = document.getElementById('btn-auto-slingshot');
+    this.scanningOverlay = document.getElementById('scanning-overlay');
+    this.scanStatusText = document.getElementById('scan-status-text');
 
     this.isPhonePulling = false;
     this.phoneAnchorCamPos = new THREE.Vector3();
@@ -40,6 +42,7 @@ class WebXRApp {
 
     this.score = 0;
     this.highScore = parseInt(localStorage.getItem('siege.highscore') || '0', 10);
+    this.scoreThrottle = 0;
 
     this.hitTestSource = null;
     this.hitTestSourceRequested = false;
@@ -47,8 +50,8 @@ class WebXRApp {
     // Állapotgép: 'DESKTOP_BATTLE' | AR esetén: 'WAITING_AR' -> 'PLACE_CASTLE' -> 'PLACE_SLINGSHOT' -> 'BATTLE'
     this.isXRActive = false;
     this.stage = 'DESKTOP_BATTLE';
-    this.castleWorldPos = new THREE.Vector3(0, 0, -0.38);
-    this.slingshotWorldPos = new THREE.Vector3(0, 0, 0.38);
+    this.castleWorldPos = new THREE.Vector3(0, 0, -0.32);
+    this.slingshotWorldPos = new THREE.Vector3(0, 0, 0.32);
 
     this.desktopRaycaster = new THREE.Raycaster();
     this.desktopMouse = new THREE.Vector2();
@@ -135,12 +138,12 @@ class WebXRApp {
     // 1. Háttér, Színtér és Kamera
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.01, 20);
-    this.camera.position.set(0, 0.46, 0.88);
-    this.camera.lookAt(0, 0.12, 0);
+    this.camera.position.set(0, 0.40, 0.78);
+    this.camera.lookAt(0, 0.10, 0);
 
-    // 2. WebGLRenderer WebXR támogatással és árnyékokkal
+    // 2. WebGLRenderer WebXR támogatással és árnyékokkal (1.75 DPR cap a lag kizárására)
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.xr.enabled = true;
     this.renderer.shadowMap.enabled = true;
@@ -284,12 +287,12 @@ class WebXRApp {
     this.dirLight = new THREE.DirectionalLight(0xfffaed, 2.0);
     this.dirLight.position.set(1.5, 3.5, 2.0);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.width = 2048;
-    this.dirLight.shadow.mapSize.height = 2048;
+    this.dirLight.shadow.mapSize.width = 1024;
+    this.dirLight.shadow.mapSize.height = 1024;
     this.dirLight.shadow.camera.near = 0.2;
     this.dirLight.shadow.camera.far = 8.0;
 
-    const d = 1.3;
+    const d = 1.1;
     this.dirLight.shadow.camera.left = -d;
     this.dirLight.shadow.camera.right = d;
     this.dirLight.shadow.camera.top = d;
@@ -303,18 +306,18 @@ class WebXRApp {
   setupDesktopEnvironment() {
     this.desktopGroup = new THREE.Group();
 
-    const tableGeo = new THREE.BoxGeometry(2.0, 0.04, 1.6);
+    const tableGeo = new THREE.BoxGeometry(1.6, 0.03, 1.2);
     const tableMat = new THREE.MeshStandardMaterial({
       color: 0x2e1b10,
       roughness: 0.6,
       metalness: 0.1
     });
     this.tableMesh = new THREE.Mesh(tableGeo, tableMat);
-    this.tableMesh.position.set(0, -0.02, 0);
+    this.tableMesh.position.set(0, -0.015, 0);
     this.tableMesh.receiveShadow = true;
     this.desktopGroup.add(this.tableMesh);
 
-    const grid = new THREE.GridHelper(1.6, 16, 0x6366f1, 0x334155);
+    const grid = new THREE.GridHelper(1.3, 14, 0x6366f1, 0x334155);
     grid.position.y = 0.001;
     this.desktopGroup.add(grid);
 
@@ -336,13 +339,14 @@ class WebXRApp {
     this.stage = 'DESKTOP_BATTLE';
     if (this.arStepper) this.arStepper.classList.add('hidden');
     if (this.btnAutoSlingshot) this.btnAutoSlingshot.classList.add('hidden');
+    if (this.scanningOverlay) this.scanningOverlay.classList.add('hidden');
     this.scanner.hide();
     this.castle.hideGhost();
     this.slingshot.hideGhost();
     this.setHint('🏹', 'Húzd hátra a csúzli golyóját az egérrel vagy érintéssel a célzáshoz!');
   }
 
-  // Interaktív lehelyezési folyamat indítása (jobb és könnyebb elrendezés szellemelőnézettel)
+  // Interaktív lehelyezési folyamat indítása animált felületi szkennerrel
   startPlacement(step) {
     if (step === 1) {
       this.stage = 'PLACE_CASTLE';
@@ -353,6 +357,12 @@ class WebXRApp {
       this.shadowPlane.visible = false;
       this.scanner.show();
       if (this.btnAutoSlingshot) this.btnAutoSlingshot.classList.add('hidden');
+
+      if (this.scanningOverlay) this.scanningOverlay.classList.remove('hidden');
+      if (this.scanStatusText) {
+        this.scanStatusText.innerText = '📡 1. Lépés: Pásztázd a terepet a VÁR lerakásához!';
+        this.scanStatusText.parentElement?.classList.remove('locked');
+      }
 
       const initialPos = this.isXRActive ? this.scanner.getPosition() : this.castleWorldPos;
       const yaw = Math.atan2(this.camera.position.x - initialPos.x, this.camera.position.z - initialPos.z);
@@ -365,8 +375,14 @@ class WebXRApp {
       this.scanner.show();
       if (this.btnAutoSlingshot) this.btnAutoSlingshot.classList.remove('hidden');
 
+      if (this.scanningOverlay) this.scanningOverlay.classList.remove('hidden');
+      if (this.scanStatusText) {
+        this.scanStatusText.innerText = '🎯 2. Lépés: Pásztázd a terepet a CSÚZLI lerakásához!';
+        this.scanStatusText.parentElement?.classList.remove('locked');
+      }
+
       const initialPos = this.isXRActive ? this.scanner.getPosition() : this.slingshotWorldPos;
-      const isValid = initialPos.distanceTo(this.castleWorldPos) >= 0.22;
+      const isValid = initialPos.distanceTo(this.castleWorldPos) >= 0.16;
       this.slingshot.showGhost(initialPos, this.castleWorldPos);
       this.slingshot.updateGhost(initialPos, this.castleWorldPos, isValid);
       this.setHint('🎯', '2. Lépés: KOPPINTS a CSÚZLI helyére, vagy nyomd meg az Auto csúzli gombot!');
@@ -396,7 +412,7 @@ class WebXRApp {
 
   confirmSlingshotPlacement(pos) {
     // Ellenőrizzük, hogy nincs-e túl közel a várhoz
-    if (pos.distanceTo(this.castleWorldPos) < 0.22) {
+    if (pos.distanceTo(this.castleWorldPos) < 0.16) {
       this.setHint('⚠️', 'Túl közel van a várhoz! Helyezd el távolabb a csúzlit.');
       this.sounds.triggerHaptic(20);
       return;
@@ -411,6 +427,7 @@ class WebXRApp {
     this.scanner.stop();
     this.slingshot.hideGhost();
     if (this.btnAutoSlingshot) this.btnAutoSlingshot.classList.add('hidden');
+    if (this.scanningOverlay) this.scanningOverlay.classList.add('hidden');
 
     this.stage = this.isXRActive ? 'BATTLE' : 'DESKTOP_BATTLE';
     this.updateStepper(3);
@@ -418,12 +435,12 @@ class WebXRApp {
   }
 
   autoPlaceSlingshot() {
-    // Intelligens automatikus katapult elhelyezés 52 cm-re a várral szemben
+    // Intelligens automatikus katapult elhelyezés 42 cm-re a várral szemben
     const dir = new THREE.Vector3().subVectors(this.camera.position, this.castleWorldPos).setY(0).normalize();
     if (dir.lengthSq() < 0.01) {
       dir.set(0, 0, 1);
     }
-    const autoPos = this.castleWorldPos.clone().addScaledVector(dir, 0.52);
+    const autoPos = this.castleWorldPos.clone().addScaledVector(dir, 0.42);
     autoPos.y = this.castleWorldPos.y;
 
     this.confirmSlingshotPlacement(autoPos);
@@ -466,7 +483,7 @@ class WebXRApp {
           const yaw = Math.atan2(this.camera.position.x - pt.x, this.camera.position.z - pt.z);
           this.castle.updateGhostPosition(pt, yaw);
         } else if (this.stage === 'PLACE_SLINGSHOT') {
-          const isValid = pt.distanceTo(this.castleWorldPos) >= 0.22;
+          const isValid = pt.distanceTo(this.castleWorldPos) >= 0.16;
           this.slingshot.updateGhost(pt, this.castleWorldPos, isValid);
         }
       }
@@ -532,6 +549,8 @@ class WebXRApp {
         this.setHint('🎲', `Új vártípus: ${this.castle.getLayoutTitle()}!`);
       }
     });
+
+    this.castleTypeBadge?.addEventListener('click', () => btnCycle?.click());
 
     // Újrapozicionálás
     btnReposition?.addEventListener('click', () => {
@@ -670,7 +689,7 @@ class WebXRApp {
         this.hitTestSourceRequested = true;
       }
 
-      // WebXR AR Felületkeresés (Hit-Testing) simított felületi szkennerrel
+      // WebXR AR Felületkeresés (Hit-Testing) simított felületi szkennerrel és animációval
       if (this.hitTestSource && (this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT')) {
         const hitTestResults = frame.getHitTestResults(this.hitTestSource);
 
@@ -685,23 +704,38 @@ class WebXRApp {
             this.scanner.setPose(m, isHorizontal);
             const scanPos = this.scanner.getPosition();
 
+            if (this.scanStatusText) {
+              this.scanStatusText.parentElement?.classList.toggle('locked', isHorizontal);
+            }
+
             if (this.stage === 'PLACE_CASTLE') {
               const yaw = Math.atan2(this.camera.position.x - scanPos.x, this.camera.position.z - scanPos.z);
               this.castle.updateGhostPosition(scanPos, yaw);
               this.setHint('🏰', isHorizontal ? 'Asztal érzékelve! KOPPINTS a VÁR lerakásához!' : '⚠️ Irányítsd vízszintes felületre!');
+              if (this.scanStatusText) {
+                this.scanStatusText.innerText = isHorizontal ? '✨ Felület rögzítve! KOPPINTS a VÁR lerakásához.' : '⚠️ Vízszintes felület szükséges!';
+              }
             } else if (this.stage === 'PLACE_SLINGSHOT') {
-              const isValid = scanPos.distanceTo(this.castleWorldPos) >= 0.22;
+              const isValid = scanPos.distanceTo(this.castleWorldPos) >= 0.16;
               this.slingshot.updateGhost(scanPos, this.castleWorldPos, isValid);
               if (!isValid) {
                 this.setHint('⚠️', 'Túl közel a várhoz! Lépj hátrébb az asztal mellett.');
+                if (this.scanStatusText) this.scanStatusText.innerText = '⚠️ Túl közel a várhoz! Helyezd el távolabb.';
               } else {
                 this.setHint('🎯', isHorizontal ? 'KOPPINTS a CSÚZLI lerakásához, vagy használd az Auto gombot!' : '⚠️ Irányítsd vízszintes felületre!');
+                if (this.scanStatusText) {
+                  this.scanStatusText.innerText = isHorizontal ? '✨ Pozíció ideális! KOPPINTS vagy használd az Auto gombot.' : '⚠️ Vízszintes felület szükséges!';
+                }
               }
             }
           }
         } else {
           this.scanner.hide();
           this.setHint('🔍', 'Pásztázd a telefonnal az asztal felületét...');
+          if (this.scanStatusText) {
+            this.scanStatusText.parentElement?.classList.remove('locked');
+            this.scanStatusText.innerText = '📡 Terep pásztázása folyamatban... Mozgasd a telefont!';
+          }
         }
       }
 
@@ -731,12 +765,14 @@ class WebXRApp {
       this.slingshot.setPull(pullX, pullY, pullZ);
     }
 
-    // Fizikai világ és részecskék léptetése
+    // Fizikai világ és részecskék léptetése (optimalizált ritkított pontszám-ellenőrzéssel)
     if (this.stage === 'BATTLE' || this.stage === 'DESKTOP_BATTLE') {
       this.physics.step(dt);
       this.effects.update(dt);
       this.slingshot.cleanOldProjectiles();
-      this.updateScore();
+      if (++this.scoreThrottle % 4 === 0) {
+        this.updateScore();
+      }
     }
 
     this.renderer.render(this.scene, this.camera);

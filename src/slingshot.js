@@ -5,11 +5,11 @@ import { PHYSICS_DT, GRAVITY, PROJECTILE_DAMPING } from './physics.js';
 // Egységes húzási határok – mindhárom vezérlési mód (érintés, telefon, kéz) ugyanezt használja
 export const PULL_LIMITS = {
   minZ: 0.002,
-  maxZ: 0.24,
-  maxX: 0.16,
-  maxY: 0.10,
-  fireZ: 0.005,      // finom, kis húzás esetén is kilövi a golyót! Csak a kiindulási pontra visszatolás ( < 5 mm ) vonja vissza
-  fullPowerZ: 0.22   // 100%-os erő
+  maxZ: 0.18,
+  maxX: 0.12,
+  maxY: 0.08,
+  fireZ: 0.004,      // finom, kis húzás esetén is kilövi a golyót! Csak a kiindulási pontra visszatolás ( < 4 mm ) vonja vissza
+  fullPowerZ: 0.16   // 100%-os erő
 };
 
 const MAX_PROJECTILES = 10;
@@ -23,6 +23,7 @@ const _curr = new THREE.Vector3();
 const _vel = new THREE.Vector3();
 const _next = new THREE.Vector3();
 const _seg = new THREE.Vector3();
+const _segBox = new THREE.Box3();
 const _hitPoint = new THREE.Vector3();
 const _hitNormal = new THREE.Vector3();
 const _camPos = new THREE.Vector3();
@@ -63,14 +64,14 @@ export class Slingshot {
     this.reloadT = 1;
     this.time = 0;
 
-    // Kompakt Asztali Méretek (arányosítva a nagyobb várhoz: kb. 20 cm magas)
-    this.stemHeight = 0.16;
-    this.forkWidth = 0.125;
-    this.forkHeight = 0.095;
+    // Finomított kompakt asztali méretek (arányosítva a kisebb várhoz: kb. 15 cm magas)
+    this.stemHeight = 0.12;
+    this.forkWidth = 0.095;
+    this.forkHeight = 0.072;
     this.restLocalPos = new THREE.Vector3(0, this.stemHeight + this.forkHeight * 0.45, 0);
 
-    this.radius = 0.034; // 6.8 cm átmérőjű masszív ostromlövedék
-    this.sphereGeo = new THREE.SphereGeometry(this.radius, 24, 24);
+    this.radius = 0.025; // 5.0 cm átmérőjű kompakt ostromlövedék
+    this.sphereGeo = new THREE.SphereGeometry(this.radius, 20, 20);
 
     // Izzó meteor / tüzes ágyúgolyó anyag
     this.projectileMat = new THREE.MeshStandardMaterial({
@@ -88,7 +89,7 @@ export class Slingshot {
     this.group.add(this.aimBall);
 
     // Bőr lövedéktartó fészek a golyó mögött
-    const pouchGeo = new THREE.BoxGeometry(0.06, 0.045, 0.016);
+    const pouchGeo = new THREE.BoxGeometry(0.045, 0.034, 0.012);
     const pouchMat = new THREE.MeshStandardMaterial({ color: 0x3d2314, roughness: 0.9 });
     this.pouch = new THREE.Mesh(pouchGeo, pouchMat);
     this.pouch.position.copy(this.restLocalPos);
@@ -96,7 +97,7 @@ export class Slingshot {
     this.group.add(this.pouch);
 
     // Kézfogó / Célzó karika pulzáló világítással
-    const ringGeo = new THREE.RingGeometry(0.044, 0.056, 32);
+    const ringGeo = new THREE.RingGeometry(0.032, 0.042, 32);
     this.ringMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
       side: THREE.DoubleSide,
@@ -141,20 +142,20 @@ export class Slingshot {
       opacity: 0.95
     });
 
-    const markerRing = new THREE.Mesh(new THREE.RingGeometry(0.024, 0.034, 32), this.hitMarkerMat);
+    const markerRing = new THREE.Mesh(new THREE.RingGeometry(0.018, 0.026, 32), this.hitMarkerMat);
     this.hitMarkerGroup.add(markerRing);
 
-    const markerDot = new THREE.Mesh(new THREE.CircleGeometry(0.007, 16), this.hitMarkerMat);
+    const markerDot = new THREE.Mesh(new THREE.CircleGeometry(0.005, 16), this.hitMarkerMat);
     this.hitMarkerGroup.add(markerDot);
 
     // Szálkereszt rovátkák a célkereszten
     [-1, 1].forEach(dir => {
-      const hBar = new THREE.Mesh(new THREE.PlaneGeometry(0.016, 0.0035), this.hitMarkerMat);
-      hBar.position.set(dir * 0.044, 0, 0);
+      const hBar = new THREE.Mesh(new THREE.PlaneGeometry(0.012, 0.0028), this.hitMarkerMat);
+      hBar.position.set(dir * 0.034, 0, 0);
       this.hitMarkerGroup.add(hBar);
 
-      const vBar = new THREE.Mesh(new THREE.PlaneGeometry(0.0035, 0.016), this.hitMarkerMat);
-      vBar.position.set(0, dir * 0.044, 0);
+      const vBar = new THREE.Mesh(new THREE.PlaneGeometry(0.0028, 0.012), this.hitMarkerMat);
+      vBar.position.set(0, dir * 0.034, 0);
       this.hitMarkerGroup.add(vBar);
     });
 
@@ -199,21 +200,21 @@ export class Slingshot {
     const ghostMat = this.ghostMat;
 
     const baseMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.08, 0.095, 0.02, 24),
+      new THREE.CylinderGeometry(0.06, 0.072, 0.015, 24),
       ghostMat
     );
-    baseMesh.position.set(0, 0.01, 0);
+    baseMesh.position.set(0, 0.008, 0);
     this.ghostGroup.add(baseMesh);
 
     const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.015, 0.022, this.stemHeight, 16),
+      new THREE.CylinderGeometry(0.011, 0.016, this.stemHeight, 16),
       ghostMat
     );
-    stem.position.set(0, this.stemHeight / 2 + 0.01, 0);
+    stem.position.set(0, this.stemHeight / 2 + 0.008, 0);
     this.ghostGroup.add(stem);
 
-    const forkGeo = new THREE.CylinderGeometry(0.011, 0.015, this.forkHeight, 14);
-    const forkY = this.stemHeight + 0.01;
+    const forkGeo = new THREE.CylinderGeometry(0.008, 0.011, this.forkHeight, 14);
+    const forkY = this.stemHeight + 0.008;
 
     const forkL = new THREE.Mesh(forkGeo, ghostMat);
     forkL.position.set(-this.forkWidth / 3.4, forkY + this.forkHeight * 0.46, 0);
@@ -293,29 +294,29 @@ export class Slingshot {
 
     // 1. Stabil kör alakú nehéz fa talapzat, ami szilárdan ráfekszik az asztalra
     const baseMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.08, 0.095, 0.02, 24),
+      new THREE.CylinderGeometry(0.06, 0.072, 0.015, 24),
       woodMat
     );
-    baseMesh.position.set(0, 0.01, 0);
+    baseMesh.position.set(0, 0.008, 0);
     baseMesh.receiveShadow = true;
     baseMesh.castShadow = true;
     this.modelGroup.add(baseMesh);
 
     // 2. Fő törzs / fogantyú
     const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.015, 0.022, this.stemHeight, 16),
+      new THREE.CylinderGeometry(0.011, 0.016, this.stemHeight, 16),
       woodMat
     );
-    stem.position.set(0, this.stemHeight / 2 + 0.01, 0);
+    stem.position.set(0, this.stemHeight / 2 + 0.008, 0);
     stem.castShadow = true;
     this.modelGroup.add(stem);
 
     // 3. Két villa ág
-    const forkY = this.stemHeight + 0.01;
+    const forkY = this.stemHeight + 0.008;
     this.leftForkTip = new THREE.Vector3(-this.forkWidth / 2, forkY + this.forkHeight, 0);
     this.rightForkTip = new THREE.Vector3(this.forkWidth / 2, forkY + this.forkHeight, 0);
 
-    const forkGeo = new THREE.CylinderGeometry(0.011, 0.015, this.forkHeight, 14);
+    const forkGeo = new THREE.CylinderGeometry(0.008, 0.011, this.forkHeight, 14);
 
     const forkL = new THREE.Mesh(forkGeo, woodMat);
     forkL.position.set(-this.forkWidth / 3.4, forkY + this.forkHeight * 0.46, 0);
@@ -330,7 +331,7 @@ export class Slingshot {
     this.modelGroup.add(forkR);
 
     // 4. Réz rögzítőgyűrűk a villahegyeken
-    const ringGeo = new THREE.TorusGeometry(0.014, 0.004, 12, 16);
+    const ringGeo = new THREE.TorusGeometry(0.011, 0.003, 12, 16);
     const ringL = new THREE.Mesh(ringGeo, brassMat);
     ringL.position.copy(this.leftForkTip);
     ringL.rotation.y = Math.PI / 2;
@@ -353,7 +354,7 @@ export class Slingshot {
     });
 
     // 1 egység magas alaphenger, amit skálázunk a hossza alapján
-    const bandGeo = new THREE.CylinderGeometry(0.0045, 0.0045, 1, 8);
+    const bandGeo = new THREE.CylinderGeometry(0.0035, 0.0035, 1, 8);
     bandGeo.translate(0, 0.5, 0); // origó az egyik végpontján
 
     this.bandLeft = new THREE.Mesh(bandGeo, bandMat);
@@ -593,9 +594,9 @@ export class Slingshot {
   calculateWorldVelocity(pullX, pullY, pullZ, target = new THREE.Vector3()) {
     // Hooke rugótörvénye: progresszív, természetes sebesség a hátrahúzás arányában
     const power = Math.min(1.0, pullZ / PULL_LIMITS.fullPowerZ);
-    const forwardSpeed = 2.4 + power * 5.8; // 2.4 m/s (finom kis húzás) - 8.2 m/s (teljes ostromerő)
-    const upwardSpeed = 0.5 + power * 2.5 - (pullY / PULL_LIMITS.maxY) * 1.8;
-    const sideSpeed = -(pullX / PULL_LIMITS.maxX) * 2.3;
+    const forwardSpeed = 2.2 + power * 5.2; // 2.2 m/s (finom kis húzás) - 7.4 m/s (kompakt ostromerő)
+    const upwardSpeed = 0.45 + power * 2.2 - (pullY / PULL_LIMITS.maxY) * 1.5;
+    const sideSpeed = -(pullX / PULL_LIMITS.maxX) * 2.0;
 
     target.set(0, 0, 0);
     target.addScaledVector(this.dirToCastle, forwardSpeed);
@@ -626,10 +627,14 @@ export class Slingshot {
     let isCastleHit = false;
     let hitIndex = this.trajectoryPoints - 1;
 
-    // A vár valódi kövei a precíz sugárkövetéshez (Raycast)
+    // A vár valódi kövei: előre tárolt tömb (nincs allokáció), doboz culling a lag megszüntetésére
     const targetMeshes = this.castle
-      ? (this.castle.foundationMeshes.length ? this.castle.blocks.concat(this.castle.foundationMeshes) : this.castle.blocks)
+      ? (this.castle.allTargetMeshes && this.castle.allTargetMeshes.length
+          ? this.castle.allTargetMeshes
+          : this.castle.blocks)
       : [];
+    const castleBox = this.castle ? this.castle.castleBounds : null;
+    const hasCastleBounds = castleBox && !castleBox.isEmpty();
 
     for (let i = 0; i < this.trajectoryPoints; i++) {
       positions[i * 3] = _curr.x;
@@ -641,29 +646,37 @@ export class Slingshot {
       _vel.y += GRAVITY * dt;
       _next.copy(_curr).addScaledVector(_vel, dt);
 
-      // 1. TŰPONTOS KŐÜTKÖZÉS: Szakasz-sugárkövetés a vár tényleges köveivel
+      // 1. TŰPONTOS KŐÜTKÖZÉS: AABB doboz előszűréssel (csak a vár közelében lévő lépéseknél raycastolunk)
       if (targetMeshes.length > 0) {
-        _seg.subVectors(_next, _curr);
-        const segDist = _seg.length();
+        let testRaycast = true;
+        if (hasCastleBounds) {
+          _segBox.setFromPoints([_curr, _next]);
+          testRaycast = castleBox.intersectsBox(_segBox);
+        }
 
-        if (segDist > 0.0001) {
-          this.trajRaycaster.set(_curr, _seg.divideScalar(segDist));
-          this.trajRaycaster.far = segDist;
+        if (testRaycast) {
+          _seg.subVectors(_next, _curr);
+          const segDist = _seg.length();
 
-          const intersects = this.trajRaycaster.intersectObjects(targetMeshes, false);
-          if (intersects.length > 0) {
-            const hit = intersects[0];
-            hitFound = true;
-            hitIndex = i + 1;
-            _hitPoint.copy(hit.point);
+          if (segDist > 0.0001) {
+            this.trajRaycaster.set(_curr, _seg.divideScalar(segDist));
+            this.trajRaycaster.far = segDist;
 
-            if (hit.face) {
-              _hitNormal.copy(hit.face.normal).applyQuaternion(hit.object.quaternion).normalize();
+            const intersects = this.trajRaycaster.intersectObjects(targetMeshes, false);
+            if (intersects.length > 0) {
+              const hit = intersects[0];
+              hitFound = true;
+              hitIndex = i + 1;
+              _hitPoint.copy(hit.point);
+
+              if (hit.face) {
+                _hitNormal.copy(hit.face.normal).applyQuaternion(hit.object.quaternion).normalize();
+              }
+
+              isCastleHit = hit.object.userData.isCastleBlock === true;
+              hitTargetName = isCastleHit ? '🏰 Várfal kőtömb' : 'Kőtalapzat';
+              break;
             }
-
-            isCastleHit = hit.object.userData.isCastleBlock === true;
-            hitTargetName = isCastleHit ? '🏰 Várfal kőtömb' : 'Kőtalapzat';
-            break;
           }
         }
       }

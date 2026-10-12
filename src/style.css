@@ -78,14 +78,14 @@ body, html {
   gap: 0.45rem;
 }
 
-.logo-badge {
-  display: flex;
+.brand-pill {
+  display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.5rem;
   background: var(--glass-bg);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  padding: 0.35rem 0.75rem;
+  padding: 0.32rem 0.8rem;
   border-radius: 9999px;
   border: 1px solid var(--glass-border);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
@@ -122,18 +122,18 @@ body, html {
   white-space: nowrap;
 }
 
+.pill-divider {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
 .castle-type-badge {
-  background: rgba(30, 41, 59, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  padding: 0.35rem 0.75rem;
-  border-radius: 9999px;
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  color: #c7d2fe;
+  color: #7dd3fc;
   font-size: 0.78rem;
   font-weight: 700;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
 /* Kör alakú ikon gombok (Hang, Súgó) */
@@ -165,33 +165,42 @@ body, html {
   transform: scale(0.92);
 }
 
-/* Pontszám jelvény */
+/* Pontszám jelvény - Letisztult és látványos */
 .stats-badge {
   background: var(--glass-bg);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  padding: 0.35rem 0.8rem;
+  padding: 0.32rem 0.75rem;
   border-radius: 9999px;
-  border: 1px solid var(--glass-border);
+  border: 1px solid rgba(245, 158, 11, 0.35);
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  font-weight: 700;
+  font-weight: 800;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
-.stats-badge .label {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.stats-badge .score-icon {
+  font-size: 0.85rem;
 }
 
 #score-display {
-  color: #38bdf8;
-  font-size: 1.05rem;
+  color: #fbbf24;
+  font-size: 1.0rem;
   font-weight: 800;
   display: inline-block;
+  min-width: 14px;
+  text-align: center;
+}
+
+.score-bump {
+  animation: scoreBump 0.35s ease;
+}
+
+@keyframes scoreBump {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.35); color: #38bdf8; }
+  100% { transform: scale(1); }
 }
 
 /* Felső Kompakt Állapotsor (Közvetlenül a fejléc alatt dokkolva, SOHA nem a képernyő közepén!) */
@@ -346,57 +355,191 @@ body, html {
   white-space: nowrap;
 }
 
-/* Alsó kezelősáv */
+/* 📡 TEREP-SZKENNELŐ ANIMÁCIÓ OVERLAY */
+.scanning-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  pointer-events: none;
+  z-index: 25;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.scan-viewfinder {
+  position: relative;
+  width: min(70vw, 280px);
+  height: min(70vw, 280px);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 20px;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.05) 0%, transparent 70%);
+  box-shadow: inset 0 0 25px rgba(56, 189, 248, 0.1), 0 0 20px rgba(6, 182, 212, 0.15);
+  overflow: hidden;
+}
+
+.scan-corner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: #38bdf8;
+  border-style: solid;
+  border-width: 0;
+  filter: drop-shadow(0 0 4px #06b6d4);
+}
+
+.scan-corner.tl { top: -1px; left: -1px; border-top-width: 3px; border-left-width: 3px; border-top-left-radius: 12px; }
+.scan-corner.tr { top: -1px; right: -1px; border-top-width: 3px; border-right-width: 3px; border-top-right-radius: 12px; }
+.scan-corner.bl { bottom: -1px; left: -1px; border-bottom-width: 3px; border-left-width: 3px; border-bottom-left-radius: 12px; }
+.scan-corner.br { bottom: -1px; right: -1px; border-bottom-width: 3px; border-right-width: 3px; border-bottom-right-radius: 12px; }
+
+.scan-laser-line {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, transparent 0%, rgba(56, 189, 248, 0.8) 25%, #22d3ee 50%, rgba(56, 189, 248, 0.8) 75%, transparent 100%);
+  box-shadow: 0 0 12px #38bdf8, 0 0 22px rgba(6, 182, 212, 0.9);
+  animation: scanSweepAnim 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes scanSweepAnim {
+  0% { top: 4%; opacity: 0.35; }
+  50% { opacity: 1; }
+  100% { top: 96%; opacity: 0.35; }
+}
+
+.scan-radar-rings {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100px;
+  height: 100px;
+}
+
+.scan-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid #06b6d4;
+  animation: scanRingPulse 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+}
+
+.scan-ring.r2 {
+  animation-delay: 1.1s;
+}
+
+@keyframes scanRingPulse {
+  0% { transform: scale(0.12); opacity: 0.95; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+.scan-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 0.4rem 1.05rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #f8fafc;
+  font-size: 0.8rem;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 14px rgba(56, 189, 248, 0.25);
+  white-space: nowrap;
+}
+
+.scan-status-pill.locked {
+  border-color: #22c55e !important;
+  color: #86efac !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 18px rgba(34, 197, 94, 0.4) !important;
+}
+
+.scan-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #06b6d4;
+  box-shadow: 0 0 10px #06b6d4;
+  animation: pulse 1.6s infinite ease-in-out;
+}
+
+.scan-status-pill.locked .scan-pulse-dot {
+  background-color: #22c55e;
+  box-shadow: 0 0 10px #22c55e;
+}
+
+/* Alsó kezelősáv (Letisztult lebegő üveg dokk) */
 .hud-footer {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 0.6rem;
   width: 100%;
+  pointer-events: none;
+}
+
+.hud-dock {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(15, 23, 42, 0.76);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 0.35rem 0.55rem;
+  border-radius: 9999px;
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 16px rgba(99, 102, 241, 0.15);
 }
 
 .btn {
-  pointer-events: auto;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding: 0.5rem 0.95rem;
-  min-height: 40px;
-  border-radius: 14px;
+  gap: 0.35rem;
+  padding: 0.45rem 0.85rem;
+  min-height: 38px;
+  border-radius: 9999px;
   font-family: var(--font);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 700;
-  border: 1px solid var(--glass-border);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   color: #fff;
-  background: var(--glass-bg);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  background: rgba(30, 41, 59, 0.7);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
 }
 
 .btn:active {
-  transform: scale(0.94);
+  transform: scale(0.93);
 }
 
 .btn-primary:hover {
-  background: rgba(99, 102, 241, 0.5);
+  background: rgba(99, 102, 241, 0.55);
   border-color: var(--primary);
-  box-shadow: 0 6px 22px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
 }
 
 .btn-secondary:hover {
-  background: rgba(147, 51, 234, 0.5);
+  background: rgba(147, 51, 234, 0.55);
   border-color: #a855f7;
-  box-shadow: 0 6px 22px rgba(168, 85, 247, 0.4);
+  box-shadow: 0 4px 16px rgba(168, 85, 247, 0.4);
 }
 
 .btn-accent:hover {
-  background: rgba(6, 182, 212, 0.5);
+  background: rgba(6, 182, 212, 0.55);
   border-color: var(--accent);
-  box-shadow: 0 6px 22px rgba(6, 182, 212, 0.4);
+  box-shadow: 0 4px 16px rgba(6, 182, 212, 0.4);
 }
 
 .btn-warning {
@@ -406,9 +549,9 @@ body, html {
 }
 
 .btn-warning:hover {
-  background: rgba(245, 158, 11, 0.5) !important;
+  background: rgba(245, 158, 11, 0.55) !important;
   border-color: #f59e0b !important;
-  box-shadow: 0 6px 22px rgba(245, 158, 11, 0.4) !important;
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4) !important;
 }
 
 .btn-full {
@@ -712,21 +855,25 @@ body.xr-active #ARButton {
     gap: 0.35rem;
   }
 
+  .brand-pill {
+    padding: 0.25rem 0.6rem;
+    gap: 0.35rem;
+  }
+
   .title {
-    font-size: 0.76rem;
+    font-size: 0.72rem;
   }
 
   .castle-type-badge {
     font-size: 0.68rem;
-    padding: 0.28rem 0.55rem;
-    max-width: 85px;
+    max-width: 100px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .mode-select-btn {
     font-size: 0.68rem;
-    padding: 0.28rem 0.55rem;
+    padding: 0.25rem 0.55rem;
   }
 
   .icon-btn {
@@ -736,16 +883,12 @@ body.xr-active #ARButton {
   }
 
   .stats-badge {
-    padding: 0.28rem 0.6rem;
+    padding: 0.25rem 0.55rem;
     gap: 0.25rem;
   }
 
-  .stats-badge .label {
-    font-size: 0.65rem;
-  }
-
   #score-display {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
   }
 
   .ar-stepper {
@@ -763,21 +906,20 @@ body.xr-active #ARButton {
     max-width: 300px;
   }
 
-  .hud-footer {
-    gap: 0.4rem;
+  .hud-dock {
+    padding: 0.28rem 0.45rem;
+    gap: 0.3rem;
   }
 
   .btn {
-    padding: 0.5rem 0.65rem;
-    min-height: 38px;
-    font-size: 0.76rem;
-    border-radius: 12px;
-    gap: 0.3rem;
-    flex: 1;
+    padding: 0.4rem 0.65rem;
+    min-height: 34px;
+    font-size: 0.72rem;
+    gap: 0.25rem;
   }
 
   .btn-icon {
-    font-size: 0.95rem;
+    font-size: 0.85rem;
   }
 
   .phone-motion-container {

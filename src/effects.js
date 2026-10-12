@@ -87,6 +87,39 @@ export class SurfaceScanner {
     this.scanCross = new THREE.LineSegments(crossGeo, lineMat);
     this.gridGroup.add(this.scanCross);
 
+    // Animált terep-szkennelő lézersugár csík (oda-vissza pásztáz a felületen)
+    const laserGeo = new THREE.PlaneGeometry(0.85, 0.018);
+    laserGeo.rotateX(-Math.PI / 2);
+    this.laserMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.75,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    this.laserSweep = new THREE.Mesh(laserGeo, this.laserMat);
+    this.laserSweep.position.y = 0.002;
+    this.gridGroup.add(this.laserSweep);
+
+    // 4 holografikus sarokrögzítő (terület határolók a pásztázott zóna körül)
+    const bracketMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8 });
+    const bSize = 0.38;
+    const bArm = 0.08;
+    [-1, 1].forEach(sx => {
+      [-1, 1].forEach(sz => {
+        const bg = new THREE.BufferGeometry();
+        const pts = new Float32Array([
+          sx * (bSize - bArm), 0.002, sz * bSize,
+          sx * bSize, 0.002, sz * bSize,
+          sx * bSize, 0.002, sz * bSize,
+          sx * bSize, 0.002, sz * (bSize - bArm)
+        ]);
+        bg.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+        const bracket = new THREE.LineSegments(bg, bracketMat);
+        this.gridGroup.add(bracket);
+      });
+    });
+
     this.group.add(this.gridGroup);
   }
 
@@ -226,16 +259,22 @@ export class SurfaceScanner {
       ring.mesh.material.opacity = alpha;
     }
 
-    // 4. Szkennelési rács finom pulzálása és pásztázása
+    // 4. Szkennelési rács és lézersugár csík pásztázó animációja
     if (this.gridMat) {
       const pulse = 0.14 + Math.sin(this.time * 2.5) * 0.07;
       this.gridMat.opacity = this.isPlaneValid ? pulse : 0.08;
+    }
+    if (this.laserSweep && this.laserMat) {
+      const sweepZ = Math.sin(this.time * 3.2) * 0.38;
+      this.laserSweep.position.z = sweepZ;
+      this.laserMat.opacity = this.isPlaneValid ? 0.65 + 0.25 * Math.sin(this.time * 6) : 0.25;
     }
 
     // 5. Szín állapot: kék/cián ha stabil és vízszintes, narancs/vörös ha szögeltérés van
     const colorHex = this.isPlaneValid ? 0x38bdf8 : 0xf97316;
     if (this.innerMat.color.getHex() !== colorHex) {
       this.innerMat.color.setHex(colorHex);
+      if (this.laserMat) this.laserMat.color.setHex(colorHex);
       // A gyűrűk saját (klónozott) anyagot használnak, ezért egyenként kell átszínezni őket
       for (const ring of this.sonarRings) {
         ring.mesh.material.color.setHex(colorHex);

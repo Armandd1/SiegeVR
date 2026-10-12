@@ -77,13 +77,32 @@ Egy web-alapú kiterjesztett valóság (WebAR) minijáték fejlesztése, amely a
   - **Felületi Pásztázás Javítás (Hit-Test Fix):** A WebXR `pose.transform.matrix` egy `Float32Array(16)`, amely nem rendelkezik `.elements` tulajdonsággal (ami korábban kivételt okozott a `setFromMatrixPosition` hívásakor). A `SurfaceScanner.setPose` mostantól közvetlenül és hibamentesen kezeli mind a `Float32Array`, mind a `THREE.Matrix4` formátumot, megengedőbb síkdőlési vizsgálattal, valamint asztali és mobil AR koppintásra azonnal rögzíthető lehelyezéssel.
   - **Finom Csúzli Húzás (Kis Húzási Küszöb):** A korábbi túlzottan szigorú 3.2 cm-es minimális hátrahúzási küszöb (`fireZ`) 0.5 cm-re (5 mm-re) csökkentve. A katapult most már a legkisebb, finom mozdulattal történő ujjhúzásra is azonnal és lágyan kilövi a golyót ahelyett, hogy visszaugrana az alaphelyzetbe. A lövés csak akkor vonódik vissza, ha a játékos kifejezetten visszaengedi a golyót a nyugalmi origóra.
 
+- [x] **13. Fázis:** UI Letisztítás, Átláthatóság, Teljesítményoptimalizálás és Terep-szkennelő Animáció:
+  - **Letisztult, Átlátható UI (Minimal Glassmorphism HUD):**
+    - Fejléc egységesítése: egyetlen összefogott `brand-pill` fogja össze az AR Ostrom logót és a vártípust (amire koppintva közvetlenül is váltható a vár).
+    - Kompakt, modern lebegő üveg dokk (`.hud-dock`) a láblécben: átlátható, lekerekített kapszula-design (`🔄 Újraépítés`, `🎲 Vártípus`, `✨ Auto csúzli`, `📍 Áthelyezés`), megszűntek az egymásra csúszó, túlméretes sávok.
+    - Teljesen tiszta és akadálymentes képernyőközép a maximális vizuális élményért.
+  - **Méretezés Finomítása (Kisebb Vár és Csúzli):**
+    - A vár kőtömbjei ~26%-kal kisebbek lettek (`8.8 × 5.2 × 5.2 cm` az asztali és mobil AR méretarányhoz igazítva), a kőtalapzat `60 × 48 cm`-re csökkent.
+    - A csúzli magassága ~15 cm-re finomult, a golyó átmérője 5 cm-esre mérséklődött, a villa és gumiszalagok arányosan kisebbek lettek.
+    - A virtuális asztal és lehelyezési távolságok arányosan finomhangolva (auto csúzli távolság: 42 cm, minimális távolság: 16 cm).
+  - **Lag-mentesítés Mindhárom Módban (Touch, Phone Motion, Hand Tracking):**
+    - **Trajektória AABB Doboz-szűrés:** Korábban a trajektória 90 lépésben képkockánként akár 3600 sugármetszést végzett az összes kőre. Új AABB cullinggal csak akkor fut sugármetszés, ha a szakasz közvetlenül a vár befoglaló dobozát metszi (1-2 teszt), megszüntetve a CPU akadást ujjhúzáskor és telefonmozgáskor.
+    - **MediaPipe Kézkövetés Optimalizáció:** `modelComplexity: 0` (Lite modell) bevezetése, egyidejűségi zárolás (`isProcessing`) a felgyülemlő aszinkron várakozási sorok ellen, és 30 FPS képkocka-korlát az AI feldolgozáshoz.
+    - **Fizikai Megoldó:** A Cannon solver iterációk száma 40-ről 18-ra csökkentve, a safeDt al-lépések 5-ről 3-ra mérsékelve, több mint 50%-kal csökkentve a fizikai szál terhelését.
+    - **Árnyék- és GPU Tehermentesítés:** DirectionalLight árnyéktérkép 2048-ról 1024-re csökkentve (75% GPU fillrate megtakarítás), a WebGL felbontásarány 1.75 DPR-re korlátozva mobiltelefonokon.
+    - **Ritkított Pontszám-vizsgálat:** Az `updateScore()` csak minden 4. képkockán fut le, elkerülve a felesleges mátrixszámításokat.
+  - **Animált Terep- és Környezetszkennelés:**
+    - **3D SurfaceScanner Lézersugár:** Animált ciánkék pásztázó lézer csík halad oda-vissza a felületen, 4 holografikus kiber-sarokrögzítővel és sonár-hullámokkal kiegészítve.
+    - **AR HUD Kereső-Viewfinder:** Csúcstechnológiás célkereszt-keret animált fentről-lefelé futó pásztázó lézerrel, pulzáló radar-gyűrűkkel és valós idejű állapotjelző tablettával ("📡 Terep pásztázása..." -> "✨ Felület rögzítve! KOPPINTS...").
+
 ---
 
 ## 5. Elvégzett Tesztek és Verifikáció
 - **3D Render & Fizika:** A Three.js és Cannon-es világ stabil 60 FPS-sel fut, a fizikai lépés és a röppálya-előrejelzés 1:1 szinkronban van.
-- **Produkciós build:** `npm run build` hiba nélkül lefutott (15 modul transzformálva, ~613 ms).
+- **Produkciós build:** `npm run build` hiba nélkül lefutott (15 modul transzformálva, ~531 ms).
 - **Fejlesztői szerver:** Elérhető helyben a `http://localhost:5173/` címen.
 
 ---
-*Utolsó frissítés: 12. Fázis befejezve – teljes rendszerszintű optimalizálás és funkciójavítás.*
+*Utolsó frissítés: 13. Fázis befejezve – UI letisztítás, méretezés finomítása, lag-mentesítés és animált terepszkennelés.*
 

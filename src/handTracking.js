@@ -81,21 +81,33 @@ export class HandTracker {
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
 
+      // modelComplexity: 0 (Lite modell) - 60 FPS lag-mentes futás mobil böngészőben is
       this.mediaPipeHands.setOptions({
         maxNumHands: 1,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.65,
-        minTrackingConfidence: 0.65
+        modelComplexity: 0,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.6
       });
 
       this.mediaPipeHands.onResults(this.onMediaPipeResults.bind(this));
     }
 
+    this.isProcessing = false;
+    this.lastProcessTime = 0;
+
     if (window.Camera && this.videoElement) {
       this.cameraUtils = new window.Camera(this.videoElement, {
         onFrame: async () => {
-          if (this.isActive && this.mediaPipeHands) {
+          if (!this.isActive || !this.mediaPipeHands || this.isProcessing) return;
+          const now = performance.now();
+          if (now - this.lastProcessTime < 33) return; // Max 30 FPS feldolgozás a CPU/GPU kíméléséhez
+          this.isProcessing = true;
+          this.lastProcessTime = now;
+          try {
             await this.mediaPipeHands.send({ image: this.videoElement });
+          } catch (e) {
+          } finally {
+            this.isProcessing = false;
           }
         },
         width: 320,
@@ -112,11 +124,19 @@ export class HandTracker {
 
         const processFrame = async () => {
           if (!this.isActive) return;
-          try {
-            if (this.videoElement.readyState >= 2 && this.mediaPipeHands) {
-              await this.mediaPipeHands.send({ image: this.videoElement });
+          const now = performance.now();
+          if (!this.isProcessing && (now - this.lastProcessTime >= 33)) {
+            this.isProcessing = true;
+            this.lastProcessTime = now;
+            try {
+              if (this.videoElement.readyState >= 2 && this.mediaPipeHands) {
+                await this.mediaPipeHands.send({ image: this.videoElement });
+              }
+            } catch (e) {
+            } finally {
+              this.isProcessing = false;
             }
-          } catch (e) {}
+          }
 
           if (this.isActive) {
             if ('requestVideoFrameCallback' in this.videoElement) {

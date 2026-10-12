@@ -17,27 +17,41 @@
   <!-- 3D Canvas Konténer -->
   <div id="canvas-container"></div>
 
-  <!-- Modern Glassmorphism UI HUD -->
+  <!-- Modern Glassmorphism UI HUD - Egyszerű, letisztult és átlátható felület -->
   <div id="ui-overlay">
     <!-- Felső Fejléc -->
     <header class="hud-header">
       <div class="header-left">
-        <div class="logo-badge">
+        <div class="brand-pill">
           <span class="pulse-dot"></span>
           <span class="title">AR OSTROM</span>
-        </div>
-        <div id="castle-type-badge" class="castle-type-badge">
-          🏰 Királyi Erőd
+          <span class="pill-divider"></span>
+          <span id="castle-type-badge" class="castle-type-badge" title="Kattints a vártípus váltásához">
+            🏰 Királyi Erőd
+          </span>
         </div>
       </div>
 
       <div class="header-right">
+        <!-- Pontszám -->
+        <div class="stats-badge" title="Jelenlegi pontszám">
+          <span class="score-icon">⭐</span>
+          <span id="score-display">0</span>
+        </div>
+
         <!-- Vezérlési Módválasztó Gomb -->
         <button id="btn-mode-select" class="mode-select-btn" title="Vezérlési mód váltása (Érintés / Telefon / Kéz)">
           <span id="current-mode-icon">👆</span>
           <span id="current-mode-label">Érintés</span>
         </button>
 
+        <!-- Kézkövetés Állapotjelző (csak kéz módban jelenik meg) -->
+        <div id="hand-status-badge" class="hand-status-badge hidden">
+          <span class="pulse-dot-cyan"></span>
+          <span id="hand-status-label">🖐️ Kéz</span>
+        </div>
+
+        <!-- Némítás és Súgó ikon gombok -->
         <button id="btn-sound" class="icon-btn" title="Hang ki/bekapcsolása" aria-label="Hang némítás">
           <span id="sound-icon">🔊</span>
         </button>
@@ -45,20 +59,10 @@
         <button id="btn-help" class="icon-btn" title="Játékszabály és Súgó" aria-label="Súgó">
           <span>❓</span>
         </button>
-
-        <div id="hand-status-badge" class="hand-status-badge hidden">
-          <span class="pulse-dot-cyan"></span>
-          <span id="hand-status-label">🖐️ Kéz aktív</span>
-        </div>
-
-        <div class="stats-badge">
-          <span class="label">Pont</span>
-          <span id="score-display">0</span>
-        </div>
       </div>
     </header>
 
-    <!-- Felső Kompakt Állapotsor (Közvetlenül a fejléc alatt, nem takarja ki a játéktér közepét) -->
+    <!-- Felső Kompakt Állapotsor (Közvetlenül a fejléc alatt, diszkrét és átlátható) -->
     <div class="hud-top-subbar">
       <!-- AR Folyamatjelző Lépések (Kompakt mini pill) -->
       <div id="ar-stepper" class="ar-stepper hidden">
@@ -85,9 +89,26 @@
       </div>
     </div>
 
-    <!-- Tiszta középső tér: NINCS semmilyen takaró gomb vagy nyíl a kamera közepén! -->
+    <!-- 📡 TEREP- ÉS KÖRNYEZET-SZKENNELŐ ANIMÁCIÓ OVERLAY (Csak terep-felméréskor látható!) -->
+    <div id="scanning-overlay" class="scanning-overlay hidden">
+      <div class="scan-viewfinder">
+        <div class="scan-corner tl"></div>
+        <div class="scan-corner tr"></div>
+        <div class="scan-corner bl"></div>
+        <div class="scan-corner br"></div>
+        <div class="scan-laser-line"></div>
+        <div class="scan-radar-rings">
+          <div class="scan-ring r1"></div>
+          <div class="scan-ring r2"></div>
+        </div>
+      </div>
+      <div class="scan-status-pill">
+        <span class="scan-pulse-dot"></span>
+        <span id="scan-status-text">📡 Terep pásztázása folyamatban... Mozgasd a telefont!</span>
+      </div>
+    </div>
 
-    <!-- Telefonmozgás Mód: Kézreálló hüvelykujj-gomb a jobb alsó sarokban (nem takarja a közepet!) -->
+    <!-- Telefonmozgás Mód: Kézreálló hüvelykujj FAB a jobb alsó sarokban (nem takarja a közepet!) -->
     <div id="phone-motion-container" class="phone-motion-container hidden">
       <button id="btn-phone-pull" class="btn-phone-fab" title="Tartsd nyomva & lépj hátra!">
         <span class="fab-icon">✊</span>
@@ -95,27 +116,29 @@
       </button>
     </div>
 
-    <!-- Alsó kezelősáv (Kompakt és kézreálló) -->
+    <!-- Alsó kezelősáv (Letisztult lebegő üveg dokk) -->
     <footer class="hud-footer">
-      <button id="btn-reset" class="btn btn-primary" title="Vár újraépítése">
-        <span class="btn-icon">🔄</span>
-        <span class="btn-text">Újraépítés</span>
-      </button>
+      <div class="hud-dock">
+        <button id="btn-reset" class="btn btn-primary" title="Vár újraépítése">
+          <span class="btn-icon">🔄</span>
+          <span class="btn-text">Újraépítés</span>
+        </button>
 
-      <button id="btn-cycle-castle" class="btn btn-secondary" title="Másik vár típus választása">
-        <span class="btn-icon">🎲</span>
-        <span class="btn-text">Vár típus</span>
-      </button>
+        <button id="btn-cycle-castle" class="btn btn-secondary" title="Másik vártípus választása">
+          <span class="btn-icon">🎲</span>
+          <span class="btn-text">Vártípus</span>
+        </button>
 
-      <button id="btn-auto-slingshot" class="btn btn-warning hidden" title="Csúzli azonnali lehelyezése ideális távolságra (50 cm)">
-        <span class="btn-icon">✨</span>
-        <span class="btn-text">Auto csúzli</span>
-      </button>
+        <button id="btn-auto-slingshot" class="btn btn-warning hidden" title="Csúzli azonnali lehelyezése ideális távolságra (42 cm)">
+          <span class="btn-icon">✨</span>
+          <span class="btn-text">Auto csúzli</span>
+        </button>
 
-      <button id="btn-reposition" class="btn btn-accent" title="Új elrendezés / AR újrakezdés">
-        <span class="btn-icon">📍</span>
-        <span class="btn-text">Áthelyezés</span>
-      </button>
+        <button id="btn-reposition" class="btn btn-accent" title="Új elrendezés / Terep újraszkennelése">
+          <span class="btn-icon">📍</span>
+          <span class="btn-text">Áthelyezés</span>
+        </button>
+      </div>
     </footer>
   </div>
 

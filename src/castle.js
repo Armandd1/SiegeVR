@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { BLOCK_SIZE } from './physics.js';
 
 export const CASTLE_LAYOUTS = ['fortress', 'pyramid', 'twin_towers', 'citadel'];
-const PLINTH_SIZE = { x: 0.82, z: 0.62 };
+const PLINTH_SIZE = { x: 0.62, z: 0.48 };
 
 export class CastleBuilder {
   constructor(scene, physics) {
@@ -10,7 +10,9 @@ export class CastleBuilder {
     this.physics = physics;
     this.blocks = [];
     this.foundationMeshes = [];
-    this.baseOffsetY = 0.025; // 2.5 cm-es megerősített kőtalapzat
+    this.allTargetMeshes = [];
+    this.castleBounds = new THREE.Box3();
+    this.baseOffsetY = 0.018; // 1.8 cm-es megerősített kőtalapzat
 
     // A vár aktuális állapota (pozíció, elforgatás, típus) – az újraépítés ugyanezt állítja vissza
     this.currentLayout = null;
@@ -308,6 +310,15 @@ export class CastleBuilder {
       const wz = originPos.z - b.x * sin + b.z * cos;
       this.createBlock(wx, originPos.y + b.y, wz, this.materialsByKey[b.mat], b.mass);
     }
+
+    // Előre gyorsítótárazott kő- és talapzatháló lista + térbeli befoglaló doboz (Box3) a sugárkövetéshez
+    this.allTargetMeshes = this.blocks.concat(this.foundationMeshes);
+    this.castleBounds.makeEmpty();
+    for (const mesh of this.allTargetMeshes) {
+      this.castleBounds.expandByObject(mesh);
+    }
+    // Finom 5 cm-es margó a befoglaló doboz körül
+    this.castleBounds.expandByScalar(0.05);
   }
 
   // Ugyanaz a vár, ugyanott, ugyanabban az irányban
@@ -373,5 +384,7 @@ export class CastleBuilder {
     }
     this.blocks = [];
     this.foundationMeshes = [];
+    this.allTargetMeshes = [];
+    this.castleBounds.makeEmpty();
   }
 }

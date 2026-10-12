@@ -1,7 +1,7 @@
 import * as CANNON from 'cannon-es';
 
-// Kockák mérete: masszív, jól látható asztali méret (12 cm széles, 7 cm magas, 7 cm mély)
-export const BLOCK_SIZE = { x: 0.12, y: 0.07, z: 0.07 };
+// Kockák mérete: finomított kompakt asztali méret (8.8 cm széles, 5.2 cm magas, 5.2 cm mély)
+export const BLOCK_SIZE = { x: 0.088, y: 0.052, z: 0.052 };
 
 // Fix fizikai időlépés – a röppálya-előrejelzés is pontosan ezzel számol
 export const PHYSICS_DT = 1 / 60;
@@ -16,10 +16,10 @@ export class PhysicsWorld {
       gravity: new CANNON.Vec3(0, GRAVITY, 0)
     });
 
-    // Stabilitás maximalizálása: 40 solver iteráció a kőtömbök egymásba csúszásának kizárására
+    // Stabilitás és sebesség optimalizáció: 18 solver iteráció lag-mentes fizikai számítással
     if (this.world.solver) {
-      this.world.solver.iterations = 40;
-      this.world.solver.tolerance = 0.00005;
+      this.world.solver.iterations = 18;
+      this.world.solver.tolerance = 0.0001;
     }
 
     this.world.allowSleep = true;
@@ -90,7 +90,7 @@ export class PhysicsWorld {
     return body;
   }
 
-  addSphere(mesh, worldPos, radius, mass = 1.15) {
+  addSphere(mesh, worldPos, radius, mass = 0.75) {
     const shape = new CANNON.Sphere(radius);
     const body = new CANNON.Body({
       mass: mass,
@@ -130,7 +130,7 @@ export class PhysicsWorld {
     for (const { body, mesh } of this.syncObjects) {
       if (mesh.userData.isCastleBlock && body.type === CANNON.Body.STATIC) {
         body.type = CANNON.Body.DYNAMIC;
-        body.mass = body.targetMass || 0.35;
+        body.mass = body.targetMass || 0.28;
         body.updateMassProperties();
         body.wakeUp();
       }
@@ -165,7 +165,7 @@ export class PhysicsWorld {
   step(dt) {
     // Delta-idő lefogása maximum 33 ms-re, megakadályozva a képkockavesztés miatti robbanásokat
     const safeDt = Math.min(dt, 0.033);
-    this.world.step(PHYSICS_DT, safeDt, 5);
+    this.world.step(PHYSICS_DT, safeDt, 3);
 
     // Three.js hálók szinkronizálása – statikus és alvó testeket kihagyjuk (nem mozdulnak)
     for (const { mesh, body } of this.syncObjects) {
