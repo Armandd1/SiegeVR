@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import { ARButton } from 'three/addons/webxr/ARButton.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PhysicsWorld } from './physics.js';
 import { CastleBuilder } from './castle.js';
 import { Slingshot } from './slingshot.js';
@@ -13,16 +11,21 @@ class WebXRApp {
     this.hintIcon = document.getElementById('hint-icon');
     this.hintText = document.getElementById('hint-text');
     this.scoreDisplay = document.getElementById('score-display');
-    this.castleTypeBadge = document.getElementById('castle-type-badge');
+    this.btnBack = document.getElementById('btn-back');
     this.arStepper = document.getElementById('ar-stepper');
     this.step1 = document.getElementById('step-1');
     this.step2 = document.getElementById('step-2');
     this.step3 = document.getElementById('step-3');
-    this.soundIcon = document.getElementById('sound-icon');
     this.helpModal = document.getElementById('help-modal');
 
-    // Vezérlési mód elemek
-    this.controlMode = 'TOUCH'; // 'TOUCH' | 'PHONE_MOTION' | 'HAND_TRACKING'
+    // WebAR Indító és Nem-támogatott Képernyő Elemek
+    this.arGateOverlay = document.getElementById('ar-gate-overlay');
+    this.arUnsupportedOverlay = document.getElementById('ar-unsupported-overlay');
+    this.btnEnterAr = document.getElementById('btn-enter-ar');
+    this.btnUnsupportedBack = document.getElementById('btn-unsupported-back');
+
+    // Vezérlési mód elemek (Kizárólag Telefonmozgás és Kézkövetés, érintés mód törölve)
+    this.controlMode = 'PHONE_MOTION'; // 'PHONE_MOTION' | 'HAND_TRACKING'
     this.currentModeIcon = document.getElementById('current-mode-icon');
     this.currentModeLabel = document.getElementById('current-mode-label');
     this.modeModal = document.getElementById('mode-modal');
@@ -40,6 +43,11 @@ class WebXRApp {
     this.tempUpVector = new THREE.Vector3();
     this.tempCamDelta = new THREE.Vector3();
 
+    // 🖐️ Kézkövetés 60 FPS simító interpolációs vektorok
+    this.isHandAiming = false;
+    this.targetHandPull = new THREE.Vector3();
+    this.currentHandPull = new THREE.Vector3();
+
     this.score = 0;
     this.highScore = parseInt(localStorage.getItem('siege.highscore') || '0', 10);
     this.scoreThrottle = 0;
@@ -47,14 +55,11 @@ class WebXRApp {
     this.hitTestSource = null;
     this.hitTestSourceRequested = false;
 
-    // Állapotgép: 'DESKTOP_BATTLE' | AR esetén: 'WAITING_AR' -> 'PLACE_CASTLE' -> 'PLACE_SLINGSHOT' -> 'BATTLE'
+    // Kizárólag WebAR állapotgép: 'PLACE_CASTLE' -> 'PLACE_SLINGSHOT' -> 'BATTLE'
     this.isXRActive = false;
-    this.stage = 'DESKTOP_BATTLE';
+    this.stage = 'PLACE_CASTLE';
     this.castleWorldPos = new THREE.Vector3(0, 0, -0.32);
     this.slingshotWorldPos = new THREE.Vector3(0, 0, 0.32);
-
-    this.desktopRaycaster = new THREE.Raycaster();
-    this.desktopMouse = new THREE.Vector2();
 
     this.init();
   }
@@ -75,6 +80,9 @@ class WebXRApp {
   }
 
   setControlMode(mode) {
+    if (mode !== 'PHONE_MOTION' && mode !== 'HAND_TRACKING') {
+      mode = 'PHONE_MOTION';
+    }
     this.controlMode = mode;
     if (this.slingshot) {
       this.slingshot.setControlMode(mode);
@@ -82,10 +90,7 @@ class WebXRApp {
 
     // Fejléc gomb feliratának és ikonjának frissítése
     if (this.currentModeIcon && this.currentModeLabel) {
-      if (mode === 'TOUCH') {
-        this.currentModeIcon.innerText = '👆';
-        this.currentModeLabel.innerText = 'Érintés';
-      } else if (mode === 'PHONE_MOTION') {
+      if (mode === 'PHONE_MOTION') {
         this.currentModeIcon.innerText = '📱';
         this.currentModeLabel.innerText = 'Telefon';
       } else if (mode === 'HAND_TRACKING') {
@@ -106,16 +111,21 @@ class WebXRApp {
     }
 
     if (mode === 'HAND_TRACKING') {
+      // GPU és akkumulátor kímélés kézkövetéskor: 1.4 DPR (kevesebb pixelrenderelés az AI mellett)
+      if (this.renderer) this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.4));
       this.handTracker.start();
     } else {
+      if (this.renderer) this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
       if (this.handStatusBadge) this.handStatusBadge.classList.add('hidden');
+      if (this.isHandAiming) {
+        this.isHandAiming = false;
+        if (this.slingshot) this.slingshot.endAim(false);
+      }
       this.handTracker.stop();
     }
 
     // Tájékoztató üzenet
-    if (mode === 'TOUCH') {
-      this.setHint('👆', 'Érintőképernyős célzás: Húzd hátra a golyót az ujjaddal!');
-    } else if (mode === 'PHONE_MOTION') {
+    if (mode === 'PHONE_MOTION') {
       this.setHint('📱', 'Telefonmozgás: Tartsd nyomva a HÚZÁS gombot, és lépj hátra a szobában!');
     } else if (mode === 'HAND_TRACKING') {
       this.setHint('🖐️', 'Kézkövetés: Csippents a levegőben a golyó megfogásához!');
@@ -129,9 +139,7 @@ class WebXRApp {
   }
 
   updateCastleBadge() {
-    if (this.castleTypeBadge && this.castle) {
-      this.castleTypeBadge.innerText = this.castle.getLayoutTitle();
-    }
+    // A vár és citadella felirat nem jelenik meg a fejlécben a kérésnek megfelelően
   }
 
   init() {
@@ -152,30 +160,13 @@ class WebXRApp {
     this.renderer.toneMappingExposure = 1.05;
     this.container.appendChild(this.renderer.domElement);
 
-    // 3. Asztali Finom Kamera Vezérlés (OrbitControls - szabad körbejárás és nagyítás asztali módban)
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.05;
-    this.controls.target.set(0, 0.1, 0);
-    this.controls.maxPolarAngle = Math.PI / 2 - 0.03;
-    this.controls.minDistance = 0.25;
-    this.controls.maxDistance = 2.4;
-
-    // 4. WebXR AR Gomb
-    const arBtn = ARButton.createButton(this.renderer, {
-      requiredFeatures: ['hit-test'],
-      optionalFeatures: ['dom-overlay', 'hands'],
-      domOverlay: { root: document.getElementById('ui-overlay') }
-    });
-    document.body.appendChild(arBtn);
-
-    // 5. Megvilágítás és árnyékok
+    // 3. Megvilágítás és árnyékok
     this.setupLighting();
 
-    // 6. Területfeltérképező és animált felületi szkenner (SurfaceScanner)
+    // 4. Területfeltérképező és animált felületi szkenner (SurfaceScanner)
     this.scanner = new SurfaceScanner(this.scene);
 
-    // 7. Árnyékfelfogó talaj AR módhoz
+    // 5. Árnyékfelfogó talaj AR módhoz
     this.shadowPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(3, 3).rotateX(-Math.PI / 2),
       new THREE.ShadowMaterial({ opacity: 0.4 })
@@ -184,18 +175,11 @@ class WebXRApp {
     this.shadowPlane.position.y = -0.001;
     this.scene.add(this.shadowPlane);
 
-    // 8. Virtuális Asztali Környezet
-    this.setupDesktopEnvironment();
-
-    // 9. Fő rendszerek inicializálása
+    // 6. Fő rendszerek inicializálása
     this.physics = new PhysicsWorld();
     this.effects = new ParticleSystem(this.scene);
     this.sounds = new SoundEffects();
     this.castle = new CastleBuilder(this.scene, this.physics);
-
-    if (this.soundIcon) {
-      this.soundIcon.innerText = this.sounds.isMuted ? '🔇' : '🔊';
-    }
 
     this.slingshot = new Slingshot(
       this.scene,
@@ -220,17 +204,13 @@ class WebXRApp {
     this.slingshot.setCastle(this.castle);
     this.slingshot.setEffects(this.effects);
 
-    // Célzás közben letiltjuk a kameramozgatást, elengedéskor visszakapcsoljuk
-    this.slingshot.onAimStateChange = (isAiming) => {
-      if (this.controls) {
-        this.controls.enabled = !isAiming;
-      }
-    };
-
     // 10. Kézkövető rendszer (A szelfi kamera tartalma SOHA nem jelenik meg a képernyőn!)
     this.handTracker = new HandTracker(
       () => {
         if (this.controlMode !== 'HAND_TRACKING') return;
+        this.isHandAiming = true;
+        this.targetHandPull.set(0, 0, 0);
+        this.currentHandPull.set(0, 0, 0);
         this.slingshot.beginAim();
         this.setHint('🖐️', 'Kéz megfogva: Húzd hátra a kezed a levegőben a feszítéshez!');
       },
@@ -239,10 +219,11 @@ class WebXRApp {
         const pullZ = (delta.z || 0) * 0.45 + (delta.y || 0) * 0.25;
         const pullX = (delta.x || 0) * 0.35;
         const pullY = -(delta.y || 0) * 0.25;
-        this.slingshot.setPull(pullX, pullY, pullZ);
+        this.targetHandPull.set(pullX, pullY, pullZ);
       },
       (wasFired) => {
         if (this.controlMode !== 'HAND_TRACKING') return;
+        this.isHandAiming = false;
         this.slingshot.endAim(wasFired);
       },
       (status) => {
@@ -265,15 +246,12 @@ class WebXRApp {
     this.controller.addEventListener('select', this.onSelect.bind(this));
     this.scene.add(this.controller);
 
-    // 12. UI események és asztali egérinterakció
+    // 12. UI és WebAR inicializálása
     this.initUI();
-    this.initDesktopPlacement();
-
-    // 13. Alapértelmezett játékfelépítés
-    this.setupDesktopGame();
+    this.initWebXR();
     this.updateScoreDisplay();
 
-    // 14. Render loop
+    // 13. Render loop
     this.lastTime = performance.now();
     this.renderer.setAnimationLoop(this.render.bind(this));
 
@@ -303,47 +281,84 @@ class WebXRApp {
     this.scene.add(this.dirLight);
   }
 
-  setupDesktopEnvironment() {
-    this.desktopGroup = new THREE.Group();
-
-    const tableGeo = new THREE.BoxGeometry(1.6, 0.03, 1.2);
-    const tableMat = new THREE.MeshStandardMaterial({
-      color: 0x2e1b10,
-      roughness: 0.6,
-      metalness: 0.1
-    });
-    this.tableMesh = new THREE.Mesh(tableGeo, tableMat);
-    this.tableMesh.position.set(0, -0.015, 0);
-    this.tableMesh.receiveShadow = true;
-    this.desktopGroup.add(this.tableMesh);
-
-    const grid = new THREE.GridHelper(1.3, 14, 0x6366f1, 0x334155);
-    grid.position.y = 0.001;
-    this.desktopGroup.add(grid);
-
-    this.scene.add(this.desktopGroup);
-  }
-
-  setupDesktopGame() {
-    this.effects.groundY = 0;
-    this.slingshot.generousGrab = false;
-    this.castle.buildCastleAt(this.castleWorldPos, null, 0);
-    this.slingshot.placeAt(this.slingshotWorldPos, this.castleWorldPos);
-    this.updateCastleBadge();
-
-    if (this.dirLight) {
-      this.dirLight.target.position.copy(this.castleWorldPos);
-      this.dirLight.target.updateMatrixWorld();
+  initWebXR() {
+    if (navigator.xr && navigator.xr.isSessionSupported) {
+      navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+        if (!supported) {
+          this.showUnsupportedScreen();
+        }
+      }).catch(() => {
+        this.showUnsupportedScreen();
+      });
+    } else {
+      this.showUnsupportedScreen();
     }
 
-    this.stage = 'DESKTOP_BATTLE';
-    if (this.arStepper) this.arStepper.classList.add('hidden');
-    if (this.btnAutoSlingshot) this.btnAutoSlingshot.classList.add('hidden');
-    if (this.scanningOverlay) this.scanningOverlay.classList.add('hidden');
-    this.scanner.hide();
-    this.castle.hideGhost();
-    this.slingshot.hideGhost();
-    this.setHint('🏹', 'Húzd hátra a csúzli golyóját az egérrel vagy érintéssel a célzáshoz!');
+    const launchAR = (e) => {
+      if (e) e.preventDefault();
+      this.startXRSession();
+    };
+
+    this.btnEnterAr?.addEventListener('click', launchAR);
+    this.arGateOverlay?.addEventListener('click', (e) => {
+      if (!e.target.closest('#btn-back')) {
+        launchAR(e);
+      }
+    });
+
+    this.btnUnsupportedBack?.addEventListener('click', () => {
+      this.handleBack();
+    });
+
+    // Képernyőkoppintás / kattintás a vár és csúzli lehelyezéséhez AR módban
+    const onPlacementPointerDown = (e) => {
+      if (e.target && (e.target.closest('#ui-overlay button') || e.target.closest('.modal-card') || e.target.closest('#phone-motion-container') || e.target.closest('#ar-gate-overlay') || e.target.closest('#ar-unsupported-overlay'))) return;
+
+      if ((this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT') && (this.scanner.hasPose || this.scanner.active)) {
+        this.onSelect();
+      }
+    };
+    window.addEventListener('pointerdown', onPlacementPointerDown);
+  }
+
+  showUnsupportedScreen() {
+    if (this.arGateOverlay) this.arGateOverlay.classList.add('hidden');
+    if (this.arUnsupportedOverlay) this.arUnsupportedOverlay.classList.remove('hidden');
+  }
+
+  async startXRSession() {
+    if (!navigator.xr) {
+      this.showUnsupportedScreen();
+      return;
+    }
+
+    try {
+      const sessionInit = {
+        requiredFeatures: ['hit-test'],
+        optionalFeatures: ['dom-overlay', 'hands'],
+        domOverlay: { root: document.getElementById('ui-overlay') }
+      };
+      const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
+      await this.renderer.xr.setSession(session);
+      if (this.arGateOverlay) this.arGateOverlay.classList.add('hidden');
+    } catch (err) {
+      console.warn('WebXR AR indítási elutasítás:', err);
+      if (err.name === 'NotSupportedError' || err.name === 'SecurityError') {
+        this.showUnsupportedScreen();
+      }
+    }
+  }
+
+  handleBack() {
+    if (this.renderer && this.renderer.xr && this.renderer.xr.isPresenting) {
+      const session = this.renderer.xr.getSession();
+      if (session) session.end().catch(() => {});
+    }
+    if (window.history.length > 1 && document.referrer) {
+      window.history.back();
+    } else {
+      window.location.href = '/';
+    }
   }
 
   // Interaktív lehelyezési folyamat indítása animált felületi szkennerrel
@@ -364,7 +379,7 @@ class WebXRApp {
         this.scanStatusText.parentElement?.classList.remove('locked');
       }
 
-      const initialPos = this.isXRActive ? this.scanner.getPosition() : this.castleWorldPos;
+      const initialPos = this.scanner.getPosition();
       const yaw = Math.atan2(this.camera.position.x - initialPos.x, this.camera.position.z - initialPos.z);
       this.castle.showGhost(initialPos, null, yaw);
       this.setHint('🏰', '1. Lépés: KOPPINTS a kívánt helyre a VÁR felépítéséhez!');
@@ -381,7 +396,7 @@ class WebXRApp {
         this.scanStatusText.parentElement?.classList.remove('locked');
       }
 
-      const initialPos = this.isXRActive ? this.scanner.getPosition() : this.slingshotWorldPos;
+      const initialPos = this.scanner.getPosition();
       const isValid = initialPos.distanceTo(this.castleWorldPos) >= 0.16;
       this.slingshot.showGhost(initialPos, this.castleWorldPos);
       this.slingshot.updateGhost(initialPos, this.castleWorldPos, isValid);
@@ -420,7 +435,7 @@ class WebXRApp {
 
     this.slingshotWorldPos.copy(pos);
     this.slingshot.placeAt(pos, this.castleWorldPos);
-    this.slingshot.generousGrab = this.isXRActive;
+    this.slingshot.generousGrab = true;
     this.effects.createPlacementBurst(pos, 16);
     this.sounds.playBuild();
 
@@ -429,7 +444,7 @@ class WebXRApp {
     if (this.btnAutoSlingshot) this.btnAutoSlingshot.classList.add('hidden');
     if (this.scanningOverlay) this.scanningOverlay.classList.add('hidden');
 
-    this.stage = this.isXRActive ? 'BATTLE' : 'DESKTOP_BATTLE';
+    this.stage = 'BATTLE';
     this.updateStepper(3);
     this.setHint('🏹', 'Harcra kész! Húzd hátra a golyót a célzáshoz.');
   }
@@ -457,59 +472,20 @@ class WebXRApp {
     }
   }
 
-  initDesktopPlacement() {
-    // Asztali módban az egér mozgása a lehelyezési fázisban
-    const getCoords = (e) => {
-      const rect = this.renderer.domElement.getBoundingClientRect();
-      return {
-        x: ((e.clientX - rect.left) / rect.width) * 2 - 1,
-        y: -((e.clientY - rect.top) / rect.height) * 2 + 1
-      };
-    };
-
-    this.renderer.domElement.addEventListener('pointermove', (e) => {
-      if (this.isXRActive) return;
-      if (this.stage !== 'PLACE_CASTLE' && this.stage !== 'PLACE_SLINGSHOT') return;
-
-      const ndc = getCoords(e);
-      this.desktopRaycaster.setFromCamera(ndc, this.camera);
-      const intersects = this.desktopRaycaster.intersectObject(this.tableMesh || this.shadowPlane);
-
-      if (intersects.length > 0) {
-        const pt = intersects[0].point;
-        this.scanner.setPositionDirect(pt);
-
-        if (this.stage === 'PLACE_CASTLE') {
-          const yaw = Math.atan2(this.camera.position.x - pt.x, this.camera.position.z - pt.z);
-          this.castle.updateGhostPosition(pt, yaw);
-        } else if (this.stage === 'PLACE_SLINGSHOT') {
-          const isValid = pt.distanceTo(this.castleWorldPos) >= 0.16;
-          this.slingshot.updateGhost(pt, this.castleWorldPos, isValid);
-        }
-      }
-    });
-
-    // Képernyőkoppintás / kattintás lehelyezéskor mind asztali, mind mobil AR módban
-    const onPlacementPointerDown = (e) => {
-      if (e.target && (e.target.closest('#ui-overlay button') || e.target.closest('.modal-card') || e.target.closest('#phone-motion-container'))) return;
-
-      if ((this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT') && (this.scanner.hasPose || this.scanner.active)) {
-        this.onSelect();
-      }
-    };
-    window.addEventListener('pointerdown', onPlacementPointerDown);
-  }
-
   initUI() {
     const btnReset = document.getElementById('btn-reset');
     const btnCycle = document.getElementById('btn-cycle-castle');
     const btnReposition = document.getElementById('btn-reposition');
-    const btnSound = document.getElementById('btn-sound');
     const btnHelp = document.getElementById('btn-help');
     const btnCloseHelp = document.getElementById('btn-close-help');
     const btnDismissHelp = document.getElementById('btn-dismiss-help');
 
-    // Első érintésre feloldjuk a hangot
+    // Vissza a főoldalra gomb
+    this.btnBack?.addEventListener('click', () => {
+      this.handleBack();
+    });
+
+    // Első érintésre feloldjuk a hangot (a hang mindig be van kapcsolva)
     const unlockAudio = () => {
       this.sounds.init();
     };
@@ -550,8 +526,6 @@ class WebXRApp {
       }
     });
 
-    this.castleTypeBadge?.addEventListener('click', () => btnCycle?.click());
-
     // Újrapozicionálás
     btnReposition?.addEventListener('click', () => {
       this.slingshot.clearAllProjectiles();
@@ -564,14 +538,6 @@ class WebXRApp {
     // Auto csúzli lehelyezés gomb
     this.btnAutoSlingshot?.addEventListener('click', () => {
       this.autoPlaceSlingshot();
-    });
-
-    // Hang némítás kapcsoló
-    btnSound?.addEventListener('click', () => {
-      const isMuted = this.sounds.toggleMute();
-      if (this.soundIcon) {
-        this.soundIcon.innerText = isMuted ? '🔇' : '🔊';
-      }
     });
 
     // Súgó modális ablak kezelése
@@ -662,8 +628,6 @@ class WebXRApp {
       if (!this.isXRActive) {
         this.isXRActive = true;
         document.body.classList.add('xr-active');
-        this.desktopGroup.visible = false;
-        if (this.controls) this.controls.enabled = false;
         if (this.arStepper) this.arStepper.classList.remove('hidden');
         this.startPlacement(1);
       }
@@ -681,9 +645,7 @@ class WebXRApp {
           this.isXRActive = false;
           document.body.classList.remove('xr-active');
           if (this.arStepper) this.arStepper.classList.add('hidden');
-          if (this.controls) this.controls.enabled = true;
-          this.desktopGroup.visible = true;
-          this.setupDesktopGame();
+          if (this.arGateOverlay) this.arGateOverlay.classList.remove('hidden');
         });
 
         this.hitTestSourceRequested = true;
@@ -749,11 +711,6 @@ class WebXRApp {
     this.scanner.update(dt);
     this.slingshot.update(dt);
 
-    // Asztali kamera finommozgás (OrbitControls)
-    if (!this.isXRActive && this.controls && this.controls.enabled) {
-      this.controls.update();
-    }
-
     // 📱 Telefonmozgás (Phone Pullback) hátrahúzás szimulációja
     if (this.controlMode === 'PHONE_MOTION' && this.isPhonePulling && this.slingshot.dirToCastle) {
       const deltaCam = this.tempCamDelta.copy(this.camera.position).sub(this.phoneAnchorCamPos);
@@ -765,8 +722,15 @@ class WebXRApp {
       this.slingshot.setPull(pullX, pullY, pullZ);
     }
 
+    // 🖐️ Kézkövetés finom, akadozásmentes 60 FPS húzás-interpoláció (Lerp)
+    if (this.controlMode === 'HAND_TRACKING' && this.isHandAiming) {
+      const lerpFactor = Math.min(1, dt * 22);
+      this.currentHandPull.lerp(this.targetHandPull, lerpFactor);
+      this.slingshot.setPull(this.currentHandPull.x, this.currentHandPull.y, this.currentHandPull.z);
+    }
+
     // Fizikai világ és részecskék léptetése (optimalizált ritkított pontszám-ellenőrzéssel)
-    if (this.stage === 'BATTLE' || this.stage === 'DESKTOP_BATTLE') {
+    if (this.stage === 'BATTLE') {
       this.physics.step(dt);
       this.effects.update(dt);
       this.slingshot.cleanOldProjectiles();

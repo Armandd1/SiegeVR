@@ -523,22 +523,12 @@ export class SoundEffects {
     this.master = null;
     this.noiseBuffer = null;
     this.lastScoreSoundAt = 0;
-    try {
-      this.isMuted = localStorage.getItem('siege.muted') === '1';
-    } catch (e) {
-      this.isMuted = false;
-    }
+    this.isMuted = false; // A hang mindig be van kapcsolva a felhasználó kérésének megfelelően
   }
 
   toggleMute() {
-    this.isMuted = !this.isMuted;
-    try {
-      localStorage.setItem('siege.muted', this.isMuted ? '1' : '0');
-    } catch (e) {}
-    if (this.master && this.ctx) {
-      this.master.gain.setTargetAtTime(this.isMuted ? 0 : 0.9, this.ctx.currentTime, 0.02);
-    }
-    return this.isMuted;
+    this.isMuted = false;
+    return false;
   }
 
   triggerHaptic(pattern) {

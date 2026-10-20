@@ -55,6 +55,8 @@ export class Slingshot {
     this.dirToCastle = new THREE.Vector3(0, 0, -1);
     this.dirRight = new THREE.Vector3(1, 0, 0);
 
+    this.controlMode = 'PHONE_MOTION';
+
     // AR-ban a képernyő alsó részén bárhol indítható a húzás; asztali módban csak a csúzli közelében
     this.generousGrab = false;
 
@@ -399,8 +401,12 @@ export class Slingshot {
     bandMesh.quaternion.setFromUnitVectors(_Y_UP, dir.divideScalar(length));
   }
 
+  setControlMode(mode) {
+    this.controlMode = mode;
+  }
+
   // ---------------------------------------------------------------------------
-  // EGYSÉGES CÉLZÁSI API – az érintés, a telefonmozgás és a kézkövetés is ezt hívja
+  // EGYSÉGES CÉLZÁSI API – a telefonmozgás és a kézkövetés is ezt hívja
   // ---------------------------------------------------------------------------
   beginAim() {
     if (this.isAiming || !this.group.visible) return false;

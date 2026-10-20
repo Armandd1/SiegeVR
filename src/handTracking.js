@@ -8,14 +8,26 @@ export class HandTracker {
 
     this.isActive = false;
     this.isPinching = false;
+    this.hasNativeXRHand = false;
+
+    // Zero-allocation újrafelhasznált pozíció-objektumok a Garbage Collection elkerülésére
     this.pinchAnchor = { x: 0, y: 0, z: 0 };
     this.smoothedMid = { x: 0, y: 0, z: 0 };
+    this.rawMid = { x: 0, y: 0, z: 0 };
+    this.tempDelta = { x: 0, y: 0, z: 0 };
 
     this.videoElement = null;
     this.cameraUtils = null;
     this.mediaPipeHands = null;
     this.stream = null;
     this.animFrameId = null;
+
+    // Intelligens terheléselosztó időzítő:
+    // A MediaPipe AI lépések befejezése UTÁN garantált pihenőidőt (Idle Gap) adunk a CPU-nak,
+    // így a Three.js 60 FPS renderelése és a fizika zavartalanul futhat.
+    this.isProcessing = false;
+    this.lastCompletionTime = 0;
+    this.minIdleGapMs = 45; // ~15-18 FPS AI mintavételezés a 100%-os CPU túlterhelés és forrósodás ellen
   }
 
   initDOM(videoEl) {
@@ -43,6 +55,7 @@ export class HandTracker {
   stop() {
     this.isActive = false;
     this.isPinching = false;
+    this.hasNativeXRHand = false;
     if (this.onStatusChange) this.onStatusChange({ active: false, handDetected: false, isPinching: false });
 
     if (this.animFrameId) {
@@ -81,43 +94,52 @@ export class HandTracker {
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
 
-      // modelComplexity: 0 (Lite modell) - 60 FPS lag-mentes futás mobil böngészőben is
+      // modelComplexity: 0 (Lite modell), 0.5 confidence a stabil követésért
+      // (megelőzi a számításigényes teljes képernyős tenyér-újradetektálást)
       this.mediaPipeHands.setOptions({
         maxNumHands: 1,
         modelComplexity: 0,
-        minDetectionConfidence: 0.6,
-        minTrackingConfidence: 0.6
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
       });
 
       this.mediaPipeHands.onResults(this.onMediaPipeResults.bind(this));
     }
 
     this.isProcessing = false;
-    this.lastProcessTime = 0;
+    this.lastCompletionTime = 0;
 
+    // Alacsonyabb kamerafelbontás (240x180): a MediaPipe belső bemeneti tenzora 224x224,
+    // így a 240x180 több mint 75% memóriamásolást és kamera ISP sávszélességet takarít meg a telefonon!
     if (window.Camera && this.videoElement) {
       this.cameraUtils = new window.Camera(this.videoElement, {
         onFrame: async () => {
-          if (!this.isActive || !this.mediaPipeHands || this.isProcessing) return;
+          if (!this.isActive || !this.mediaPipeHands || this.isProcessing || this.hasNativeXRHand) return;
           const now = performance.now();
-          if (now - this.lastProcessTime < 33) return; // Max 30 FPS feldolgozás a CPU/GPU kíméléséhez
+          if (now - this.lastCompletionTime < this.minIdleGapMs) return;
+
           this.isProcessing = true;
-          this.lastProcessTime = now;
           try {
             await this.mediaPipeHands.send({ image: this.videoElement });
           } catch (e) {
           } finally {
             this.isProcessing = false;
+            this.lastCompletionTime = performance.now();
           }
         },
-        width: 320,
-        height: 240
+        width: 240,
+        height: 180
       });
       await this.cameraUtils.start();
     } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && this.videoElement) {
       try {
         this.stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: 320, height: 240 }
+          video: {
+            facingMode: 'user',
+            width: { ideal: 240, max: 320 },
+            height: { ideal: 180, max: 240 },
+            frameRate: { ideal: 20, max: 24 }
+          }
         });
         this.videoElement.srcObject = this.stream;
         await this.videoElement.play();
@@ -125,9 +147,8 @@ export class HandTracker {
         const processFrame = async () => {
           if (!this.isActive) return;
           const now = performance.now();
-          if (!this.isProcessing && (now - this.lastProcessTime >= 33)) {
+          if (!this.isProcessing && !this.hasNativeXRHand && (now - this.lastCompletionTime >= this.minIdleGapMs)) {
             this.isProcessing = true;
-            this.lastProcessTime = now;
             try {
               if (this.videoElement.readyState >= 2 && this.mediaPipeHands) {
                 await this.mediaPipeHands.send({ image: this.videoElement });
@@ -135,6 +156,7 @@ export class HandTracker {
             } catch (e) {
             } finally {
               this.isProcessing = false;
+              this.lastCompletionTime = performance.now();
             }
           }
 
@@ -182,17 +204,15 @@ export class HandTracker {
     const dz = (thumb.z - index.z) || 0;
     const pinchDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-    const rawMid = {
-      x: (thumb.x + index.x) / 2,
-      y: (thumb.y + index.y) / 2,
-      z: (thumb.z + index.z) / 2
-    };
+    this.rawMid.x = (thumb.x + index.x) * 0.5;
+    this.rawMid.y = (thumb.y + index.y) * 0.5;
+    this.rawMid.z = (thumb.z + index.z) * 0.5;
 
     // Aluláteresztő simítás (EMA) kézremegés ellen
     const alpha = 0.55;
-    this.smoothedMid.x = this.smoothedMid.x * (1 - alpha) + rawMid.x * alpha;
-    this.smoothedMid.y = this.smoothedMid.y * (1 - alpha) + rawMid.y * alpha;
-    this.smoothedMid.z = this.smoothedMid.z * (1 - alpha) + rawMid.z * alpha;
+    this.smoothedMid.x = this.smoothedMid.x * (1 - alpha) + this.rawMid.x * alpha;
+    this.smoothedMid.y = this.smoothedMid.y * (1 - alpha) + this.rawMid.y * alpha;
+    this.smoothedMid.z = this.smoothedMid.z * (1 - alpha) + this.rawMid.z * alpha;
 
     // Skála-független csippentési küszöb hiszterézissel (be: 0.32 * kézméret, ki: 0.42 * kézméret)
     const pinchRatio = pinchDist / handScale;
@@ -201,16 +221,18 @@ export class HandTracker {
     if (shouldPinch) {
       if (!this.isPinching) {
         this.isPinching = true;
-        this.pinchAnchor = { ...this.smoothedMid };
+        this.pinchAnchor.x = this.smoothedMid.x;
+        this.pinchAnchor.y = this.smoothedMid.y;
+        this.pinchAnchor.z = this.smoothedMid.z;
         if (this.onPinchStart) this.onPinchStart(this.smoothedMid);
       } else {
         // Mozgatás az eredeti rögzítési ponthoz képest (invertált X a tükörkép miatt)
-        const deltaX = (this.pinchAnchor.x - this.smoothedMid.x) * 2.2;
-        const deltaY = (this.smoothedMid.y - this.pinchAnchor.y) * 2.2;
-        const deltaZ = (this.pinchAnchor.z - this.smoothedMid.z) * 2.8;
+        this.tempDelta.x = (this.pinchAnchor.x - this.smoothedMid.x) * 2.2;
+        this.tempDelta.y = (this.smoothedMid.y - this.pinchAnchor.y) * 2.2;
+        this.tempDelta.z = (this.pinchAnchor.z - this.smoothedMid.z) * 2.8;
 
         if (this.onPinchMove) {
-          this.onPinchMove({ x: deltaX, y: deltaY, z: deltaZ });
+          this.onPinchMove(this.tempDelta);
         }
       }
     } else {
@@ -231,6 +253,14 @@ export class HandTracker {
 
     for (const inputSource of frame.session.inputSources) {
       if (inputSource.hand) {
+        if (!this.hasNativeXRHand) {
+          this.hasNativeXRHand = true;
+          // Ha natív WebXR kézkövetés elérhető, leállítjuk a felesleges webkamera AI-t
+          if (this.cameraUtils) {
+            try { this.cameraUtils.stop(); } catch (e) {}
+          }
+        }
+
         const indexTip = inputSource.hand.get('index-finger-tip');
         const thumbTip = inputSource.hand.get('thumb-tip');
 
@@ -243,24 +273,24 @@ export class HandTracker {
             const p2 = thumbPose.transform.position;
 
             const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y, p1.z - p2.z);
-            const mid = {
-              x: (p1.x + p2.x) / 2,
-              y: (p1.y + p2.y) / 2,
-              z: (p1.z + p2.z) / 2
-            };
+            this.rawMid.x = (p1.x + p2.x) * 0.5;
+            this.rawMid.y = (p1.y + p2.y) * 0.5;
+            this.rawMid.z = (p1.z + p2.z) * 0.5;
 
             const XR_PINCH_DIST = 0.038; // 3.8 cm
 
             if (dist < XR_PINCH_DIST) {
               if (!this.isPinching) {
                 this.isPinching = true;
-                this.pinchAnchor = { ...mid };
-                if (this.onPinchStart) this.onPinchStart(mid);
+                this.pinchAnchor.x = this.rawMid.x;
+                this.pinchAnchor.y = this.rawMid.y;
+                this.pinchAnchor.z = this.rawMid.z;
+                if (this.onPinchStart) this.onPinchStart(this.rawMid);
               } else {
-                const deltaX = (mid.x - this.pinchAnchor.x);
-                const deltaY = (mid.y - this.pinchAnchor.y);
-                const deltaZ = (mid.z - this.pinchAnchor.z);
-                if (this.onPinchMove) this.onPinchMove({ x: deltaX, y: deltaY, z: deltaZ });
+                this.tempDelta.x = (this.rawMid.x - this.pinchAnchor.x);
+                this.tempDelta.y = (this.rawMid.y - this.pinchAnchor.y);
+                this.tempDelta.z = (this.rawMid.z - this.pinchAnchor.z);
+                if (this.onPinchMove) this.onPinchMove(this.tempDelta);
               }
             } else if (this.isPinching) {
               this.isPinching = false;

@@ -22,14 +22,10 @@
     <!-- Felső Fejléc -->
     <header class="hud-header">
       <div class="header-left">
-        <div class="brand-pill">
-          <span class="pulse-dot"></span>
-          <span class="title">AR OSTROM</span>
-          <span class="pill-divider"></span>
-          <span id="castle-type-badge" class="castle-type-badge" title="Kattints a vártípus váltásához">
-            🏰 Királyi Erőd
-          </span>
-        </div>
+        <button id="btn-back" class="btn-back" title="Vissza a főoldalra" aria-label="Vissza a főoldalra">
+          <span class="back-icon">⬅️</span>
+          <span class="back-text">Vissza</span>
+        </button>
       </div>
 
       <div class="header-right">
@@ -39,10 +35,10 @@
           <span id="score-display">0</span>
         </div>
 
-        <!-- Vezérlési Módválasztó Gomb -->
-        <button id="btn-mode-select" class="mode-select-btn" title="Vezérlési mód váltása (Érintés / Telefon / Kéz)">
-          <span id="current-mode-icon">👆</span>
-          <span id="current-mode-label">Érintés</span>
+        <!-- Vezérlési Módválasztó Gomb (Telefon / Kéz) -->
+        <button id="btn-mode-select" class="mode-select-btn" title="Vezérlési mód váltása (Telefon / Kéz)">
+          <span id="current-mode-icon">📱</span>
+          <span id="current-mode-label">Telefon</span>
         </button>
 
         <!-- Kézkövetés Állapotjelző (csak kéz módban jelenik meg) -->
@@ -51,11 +47,7 @@
           <span id="hand-status-label">🖐️ Kéz</span>
         </div>
 
-        <!-- Némítás és Súgó ikon gombok -->
-        <button id="btn-sound" class="icon-btn" title="Hang ki/bekapcsolása" aria-label="Hang némítás">
-          <span id="sound-icon">🔊</span>
-        </button>
-
+        <!-- Súgó ikon gomb -->
         <button id="btn-help" class="icon-btn" title="Játékszabály és Súgó" aria-label="Súgó">
           <span>❓</span>
         </button>
@@ -157,29 +149,18 @@
       </div>
 
       <div class="modal-body mode-grid">
-        <!-- 1. Mód: Érintés / Drag -->
-        <div class="mode-card active" data-mode="TOUCH" id="card-mode-touch">
-          <div class="mode-card-icon">👆</div>
-          <div class="mode-card-info">
-            <strong>Érintőképernyős célzás</strong>
-            <p>Klasszikus ujjhúzás a képernyőn. Finom célzás, szimmetrikus erővektor és látható röppálya ív.</p>
-            <span class="mode-tag">Legstabilabb & Legpontosabb</span>
-          </div>
-          <button class="btn btn-sm btn-primary mode-select-action">Kiválasztás</button>
-        </div>
-
-        <!-- 2. Mód: Térbeli Telefonmozgás -->
-        <div class="mode-card" data-mode="PHONE_MOTION" id="card-mode-phone">
+        <!-- 1. Mód: Térbeli Telefonmozgás -->
+        <div class="mode-card active" data-mode="PHONE_MOTION" id="card-mode-phone">
           <div class="mode-card-icon">📱</div>
           <div class="mode-card-info">
             <strong>Térbeli Telefonmozgás (6DoF)</strong>
-            <p>Tartsd nyomva a képernyőt, és lépj hátra a telefonnal a szobában! Az ujjad felengedésével kilövöd a golyót.</p>
+            <p>Tartsd nyomva a HÚZÁS gombot, és lépj hátra a telefonnal a szobában! Az ujjad felengedésével kilövöd a golyót.</p>
             <span class="mode-tag tag-purple">Valódi Fizikai Élmény</span>
           </div>
           <button class="btn btn-sm btn-secondary mode-select-action">Kiválasztás</button>
         </div>
 
-        <!-- 3. Mód: Kézkövetés & Csippentés -->
+        <!-- 2. Mód: Kézkövetés & Csippentés -->
         <div class="mode-card" data-mode="HAND_TRACKING" id="card-mode-hand">
           <div class="mode-card-icon">🖐️</div>
           <div class="mode-card-info">
@@ -190,6 +171,35 @@
           <button class="btn btn-sm btn-accent mode-select-action">Kiválasztás</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- 🚀 WebAR Indító Képernyő (Egyetlen érintéssel közvetlenül a kamerát nyitja meg) -->
+  <div id="ar-gate-overlay" class="ar-gate-overlay">
+    <div class="ar-gate-card">
+      <div class="ar-gate-glow"></div>
+      <div class="ar-gate-icon">📱</div>
+      <h2>AR Asztali Ostrom</h2>
+      <p>A játék kiterjesztett valóságban (WebAR) közvetlenül az asztalodra vetíti a várat.</p>
+      <button id="btn-enter-ar" class="btn btn-primary btn-gate">
+        <span class="btn-icon">✨</span>
+        <span>Koppints a játékhoz</span>
+      </button>
+      <span class="ar-gate-sub">A képernyő megérintésével azonnal megnyílik a kamera</span>
+    </div>
+  </div>
+
+  <!-- ⚠️ WebAR Nem Támogatott Képernyő (Ha a böngésző nem támogatja a WebXR-t) -->
+  <div id="ar-unsupported-overlay" class="ar-gate-overlay hidden">
+    <div class="ar-gate-card error">
+      <div class="ar-gate-icon">⚠️</div>
+      <h2>WebAR Szükséges</h2>
+      <p>Ez a játék kizárólag kiterjesztett valóságban (AR) játszható.</p>
+      <p class="ar-gate-subtext">Kérjük, nyisd meg az alkalmazást egy WebXR-képes Android telefonon Chrome böngészőben!</p>
+      <button id="btn-unsupported-back" class="btn btn-primary btn-gate">
+        <span class="btn-icon">⬅️</span>
+        <span>Vissza a főoldalra</span>
+      </button>
     </div>
   </div>
 
@@ -209,7 +219,7 @@
           <div class="help-step-icon">📱</div>
           <div class="help-step-content">
             <strong>1. Asztal beolvasása (WebAR)</strong>
-            <p>Nyomd meg az <em>AR Indítása</em> gombot! Mozgasd a telefont, amíg a kék célzókarika megjelenik az asztalon, majd koppints a vár felépítéséhez.</p>
+            <p>Mozgasd a telefont, amíg a kék célzókarika megjelenik az asztalon, majd koppints a vár felépítéséhez.</p>
           </div>
         </div>
 
@@ -217,15 +227,15 @@
           <div class="help-step-icon">🎯</div>
           <div class="help-step-content">
             <strong>2. Csúzli lerakása</strong>
-            <p>Lépj hátra 1-2 lépést a telefonnal, irányítsd az asztal felé a kamerát, és koppints a csúzli lehelyezéséhez.</p>
+            <p>Lépj hátra 1-2 lépést a telefonnal, irányítsd az asztal felé a kamerát, és koppints a csúzli lehelyezéséhez (vagy használd az Auto csúzli gombot).</p>
           </div>
         </div>
 
         <div class="help-step">
           <div class="help-step-icon">🎮</div>
           <div class="help-step-content">
-            <strong>3. Háromféle vezérlési mód</strong>
-            <p>A fejlécben a 🎮 gombbal válthatsz: képernyős ujjhúzás (👆), telefonnal hátralépés (📱) vagy kézcsippentés a levegőben (🖐️).</p>
+            <strong>3. Kétféle vezérlési mód</strong>
+            <p>A fejlécben a 📱 gombbal válthatsz: telefonnal hátralépés (📱) vagy kézcsippentés a levegőben (🖐️).</p>
           </div>
         </div>
 
