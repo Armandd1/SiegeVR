@@ -105,6 +105,21 @@
         </div>
       </div>
 
+      <!-- ⚙️ Beállítások: Röppálya vonalazás ki/bekapcsolása -->
+      <div class="menu-setting-card">
+        <div class="setting-info">
+          <span class="setting-icon">🎯</span>
+          <div class="setting-text">
+            <span class="setting-title">Röppálya vonalazása</span>
+            <span class="setting-desc">3D íves célzássegítő és becsapódási pont</span>
+          </div>
+        </div>
+        <label class="toggle-switch" for="toggle-trajectory" title="Röppálya kirajzolása">
+          <input type="checkbox" id="toggle-trajectory" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
       <!-- Kompakt 1-soros folyamat-útmutató -->
       <div class="menu-quick-steps">
         <span class="qstep"><span>1</span> Pásztázás</span>
@@ -201,6 +216,33 @@
         <span class="fab-icon">✊</span>
         <span class="fab-text">HÚZÁS</span>
       </button>
+    </div>
+
+    <!-- 👆 Érintéses Célzó Felület (Csak Harc fázisban és Érintés módban aktív) -->
+    <div id="touch-aim-surface" class="touch-aim-surface hidden">
+      <!-- Vizuális húzásjelző HUD elem -->
+      <div id="touch-drag-indicator" class="touch-drag-indicator hidden">
+        <div class="drag-anchor-ring"></div>
+        <svg class="drag-line-svg">
+          <line id="drag-line-el" x1="0" y1="0" x2="0" y2="0" />
+        </svg>
+        <div id="drag-ball-el" class="drag-pull-ball"></div>
+        <div id="drag-power-badge" class="drag-power-badge">0%</div>
+      </div>
+      <!-- Finom útmutató tabletta a képernyő alsó harmadában -->
+      <div id="touch-hint-pill" class="touch-hint-pill">
+        👇 Érintsd meg és húzd lefelé a golyó kilövéséhez!
+      </div>
+    </div>
+
+    <!-- 🖐️ Kézkövetés AR Hologram Célzókereszt és Vizuális Csippentés HUD -->
+    <div id="hand-aim-overlay" class="hand-aim-overlay hidden">
+      <div id="hand-reticle" class="hand-reticle hidden">
+        <div class="reticle-outer-ring"></div>
+        <div class="reticle-pinch-fill" id="hand-pinch-meter"></div>
+        <div class="reticle-center-dot"></div>
+        <div id="hand-reticle-label" class="reticle-label">🖐️ Kéz</div>
+      </div>
     </div>
 
     <!-- Alsó kezelősáv (Letisztult lebegő üveg dokk) -->

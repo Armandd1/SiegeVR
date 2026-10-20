@@ -131,10 +131,11 @@ export class Slingshot {
     this.trajectoryLine.frustumCulled = false;
     this.scene.add(this.trajectoryLine);
 
-    // Taktikai precíziós célkereszt csoport (kikapcsolva)
     this.hitMarkerGroup = new THREE.Group();
     this.hitMarkerGroup.visible = false;
     this.scene.add(this.hitMarkerGroup);
+
+    this.showTrajectory = true;
 
     this.hitMarkerMat = new THREE.MeshBasicMaterial({
       color: 0xef4444,
@@ -526,66 +527,168 @@ export class Slingshot {
     return Math.hypot(clientX - sx, clientY - sy) < radius;
   }
 
+  setShowTrajectory(enabled) {
+    this.showTrajectory = !!enabled;
+    if (!this.showTrajectory) {
+      this.trajectoryLine.visible = false;
+      this.hitMarkerGroup.visible = false;
+    }
+  }
+
   bindEvents() {
     let activePointerId = null;
     let startX = 0;
     let startY = 0;
 
+    // DOM Célzó Segédelemek
+    const touchSurface = document.getElementById('touch-aim-surface');
+    const dragIndicator = document.getElementById('touch-drag-indicator');
+    const dragLineEl = document.getElementById('drag-line-el');
+    const dragBallEl = document.getElementById('drag-ball-el');
+    const dragPowerBadge = document.getElementById('drag-power-badge');
+    const touchHint = document.getElementById('touch-hint-pill');
+
     const onPointerDown = (e) => {
       if (this.controlMode !== 'TOUCH' || this.isAiming) return;
-      if (!e.isPrimary || e.button !== 0) return;
+      if (!e.isPrimary || (e.button !== undefined && e.button !== 0)) return;
       if (!this.group.visible || this.isUiTarget(e.target)) return;
 
-      const rect = this.domElement.getBoundingClientRect();
-      const ndc = {
-        x: ((e.clientX - rect.left) / rect.width) * 2 - 1,
-        y: -((e.clientY - rect.top) / rect.height) * 2 + 1
-      };
+      // Ha a dedikált touch felület aktív, mindig elfogadjuk a húzást
+      const isFromTouchSurface = touchSurface && (e.target === touchSurface || touchSurface.contains(e.target));
 
-      if (!this.grabTargets) {
-        this.grabTargets = [this.aimBall, this.pullHelperRing, this.pouch, ...this.modelGroup.children];
+      if (!isFromTouchSurface) {
+        const rect = this.domElement.getBoundingClientRect();
+        const ndc = {
+          x: ((e.clientX - rect.left) / rect.width) * 2 - 1,
+          y: -((e.clientY - rect.top) / rect.height) * 2 + 1
+        };
+
+        if (!this.grabTargets) {
+          this.grabTargets = [this.aimBall, this.pullHelperRing, this.pouch, ...this.modelGroup.children];
+        }
+        this.raycaster.setFromCamera(ndc, this.camera);
+        const hitsSlingshot = this.raycaster.intersectObjects(this.grabTargets, false).length > 0;
+
+        const grabbed = hitsSlingshot
+          || this.isNearBallOnScreen(e.clientX, e.clientY, e.pointerType)
+          || (this.generousGrab && ndc.y < 0.65);
+
+        if (!grabbed) return;
       }
-      this.raycaster.setFromCamera(ndc, this.camera);
-      const hitsSlingshot = this.raycaster.intersectObjects(this.grabTargets, false).length > 0;
 
-      const grabbed = hitsSlingshot
-        || this.isNearBallOnScreen(e.clientX, e.clientY, e.pointerType)
-        || (this.generousGrab && ndc.y < 0.45);
-
-      if (grabbed && this.beginAim()) {
+      if (this.beginAim()) {
         activePointerId = e.pointerId;
         startX = e.clientX;
         startY = e.clientY;
+
+        if (e.target && e.target.setPointerCapture) {
+          try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+        }
+
+        if (dragIndicator) {
+          dragIndicator.classList.remove('hidden');
+          const anchorRing = dragIndicator.querySelector('.drag-anchor-ring');
+          if (anchorRing) {
+            anchorRing.style.left = `${startX}px`;
+            anchorRing.style.top = `${startY}px`;
+          }
+          if (dragBallEl) {
+            dragBallEl.style.left = `${startX}px`;
+            dragBallEl.style.top = `${startY}px`;
+          }
+          if (dragLineEl) {
+            dragLineEl.setAttribute('x1', startX);
+            dragLineEl.setAttribute('y1', startY);
+            dragLineEl.setAttribute('x2', startX);
+            dragLineEl.setAttribute('y2', startY);
+          }
+          if (dragPowerBadge) {
+            dragPowerBadge.style.left = `${startX}px`;
+            dragPowerBadge.style.top = `${startY}px`;
+            dragPowerBadge.innerText = '0% ERŐ';
+          }
+        }
+        if (touchHint) touchHint.classList.add('hidden');
       }
     };
 
     const onPointerMove = (e) => {
       if (!this.isAiming || e.pointerId !== activePointerId) return;
 
-      // Kijelző méretaránytól független, 1:1 szimmetrikus húzási skála (nincs ovális torzulás mobilon!)
       const scaleRef = Math.min(window.innerWidth, window.innerHeight, 520);
-      const normX = (e.clientX - startX) / scaleRef;
-      const normY = (e.clientY - startY) / scaleRef;
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
 
-      // Hátrahúzás (Z): lefelé húzáskor nő a feszültség
-      // Oldalirányú célzás (X): jobbra húzva balra lő – mint egy valódi csúzli
-      // Magassági korrekció (Y): lejjebb húzva magasabb ív
-      this.setPull(normX * 0.48, -normY * 0.28, normY * 0.65);
+      // Támogatjuk a LEFELÉ húzást (klasszikus csúzli) és a FELFELÉ pöccintést is!
+      let normX = deltaX / scaleRef;
+      let normY = deltaY / scaleRef;
+
+      // Ha felfelé húzza (flick/swipe fel a vár felé), automatikusan átváltjuk pozitív feszítésre
+      let effectivePullZ;
+      let effectivePullX;
+      let effectivePullY;
+
+      if (normY >= 0) {
+        // Hátrahúzás lefelé
+        effectivePullZ = normY * 0.72;
+        effectivePullX = normX * 0.48;
+        effectivePullY = -normY * 0.28;
+      } else {
+        // Pöccintés előre / felfelé
+        effectivePullZ = -normY * 0.72;
+        effectivePullX = -normX * 0.48;
+        effectivePullY = normY * 0.28;
+      }
+
+      this.setPull(effectivePullX, effectivePullY, effectivePullZ);
+
+      // Kijelző 2D HUD húzásjelző frissítése
+      if (dragIndicator && !dragIndicator.classList.contains('hidden')) {
+        if (dragBallEl) {
+          dragBallEl.style.left = `${e.clientX}px`;
+          dragBallEl.style.top = `${e.clientY}px`;
+        }
+        if (dragLineEl) {
+          dragLineEl.setAttribute('x2', e.clientX);
+          dragLineEl.setAttribute('y2', e.clientY);
+        }
+        if (dragPowerBadge) {
+          dragPowerBadge.style.left = `${e.clientX}px`;
+          dragPowerBadge.style.top = `${e.clientY}px`;
+          const powerPct = Math.round(Math.min(100, (effectivePullZ / PULL_LIMITS.fullPowerZ) * 100));
+          dragPowerBadge.innerText = `${powerPct}% ERŐ`;
+        }
+      }
     };
 
     const onPointerUp = (e) => {
       if (e.pointerId !== activePointerId) return;
       activePointerId = null;
+      if (e.target && e.target.releasePointerCapture) {
+        try { e.target.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
+      if (dragIndicator) dragIndicator.classList.add('hidden');
+      if (touchHint) touchHint.classList.remove('hidden');
       this.endAim(true);
     };
 
     const onPointerCancel = (e) => {
       if (e.pointerId !== activePointerId) return;
       activePointerId = null;
+      if (dragIndicator) dragIndicator.classList.add('hidden');
+      if (touchHint) touchHint.classList.remove('hidden');
       this.endAim(false);
     };
 
-    // Capture fázis: még az OrbitControls előtt fut le, így célzáskor a kamera nem fordul el
+    // Ha van dedikált touch felület, közvetlenül rá kötjük (WebXR DOM Overlay kompatibilis!)
+    if (touchSurface) {
+      touchSurface.addEventListener('pointerdown', onPointerDown, { passive: false });
+      touchSurface.addEventListener('pointermove', onPointerMove, { passive: false });
+      touchSurface.addEventListener('pointerup', onPointerUp, { passive: false });
+      touchSurface.addEventListener('pointercancel', onPointerCancel, { passive: false });
+    }
+
+    // Capture fázis a window-n (desktop vagy canvas kattintásokhoz)
     window.addEventListener('pointerdown', onPointerDown, { capture: true });
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
@@ -608,9 +711,55 @@ export class Slingshot {
   }
 
   updateTrajectory(pullX, pullY, pullZ) {
-    // Célzási segítség (3D röppálya ív, célkereszt és HUD előrejelzés) teljesen kikapcsolva
-    this.trajectoryLine.visible = false;
-    this.hitMarkerGroup.visible = false;
+    if (!this.showTrajectory) {
+      this.trajectoryLine.visible = false;
+      this.hitMarkerGroup.visible = false;
+      return;
+    }
+
+    const worldStart = this.aimBall.getWorldPosition(_v1);
+    const worldVel = this.calculateWorldVelocity(pullX, pullY, pullZ, _vel);
+
+    const positions = this.trajectoryLine.geometry.attributes.position.array;
+    _curr.copy(worldStart);
+
+    const dt = 1 / 50;
+    let hitFound = false;
+
+    for (let i = 0; i < this.trajectoryPoints; i++) {
+      positions[i * 3] = _curr.x;
+      positions[i * 3 + 1] = _curr.y;
+      positions[i * 3 + 2] = _curr.z;
+
+      if (!hitFound) {
+        _next.copy(_curr).addScaledVector(_vel, dt);
+        _vel.y += GRAVITY * dt;
+        _vel.multiplyScalar(Math.max(0, 1 - PROJECTILE_DAMPING * dt));
+
+        if (_next.y <= this.groundY + 0.005) {
+          _hitPoint.copy(_next);
+          _hitPoint.y = this.groundY + 0.005;
+          hitFound = true;
+        }
+        _curr.copy(_next);
+      } else {
+        positions[i * 3] = _hitPoint.x;
+        positions[i * 3 + 1] = _hitPoint.y;
+        positions[i * 3 + 2] = _hitPoint.z;
+      }
+    }
+
+    this.trajectoryLine.geometry.attributes.position.needsUpdate = true;
+    this.trajectoryLine.visible = true;
+
+    if (hitFound) {
+      this.hitMarkerGroup.position.copy(_hitPoint);
+      this.hitMarkerGroup.position.y += 0.002;
+      this.hitMarkerGroup.rotation.x = -Math.PI / 2;
+      this.hitMarkerGroup.visible = true;
+    } else {
+      this.hitMarkerGroup.visible = false;
+    }
   }
 
   launch(localPull) {

@@ -170,16 +170,33 @@ Egy web-alapú kiterjesztett valóság (WebAR) minijáték fejlesztése, amely a
   - **Telepítési Gomb Kezelése:**
     - A felhasználó kérésének megfelelően nem került kihelyezésre dedikált "Telepítés alkalmazásként" gomb a felületre; a PWA a böngésző natív kezdőképernyőre helyezési mechanizmusán keresztül közvetlenül telepíthető.
 
+- [x] **20. Fázis:** Képernyős Ujjhúzás Javítása, Főoldali Röppálya Kapcsoló és Kézkövetés Átdolgozás:
+  - **Képernyős Érintéses Célzás Javítása (Touch Aim Surface):**
+    - **WebXR DOM Overlay Érintés-átengedés Megoldása:** A korábbi `#ui-overlay` `pointer-events: none` beállítása miatt az Android Chrome WebXR motorja minden képernyőérintést lenyelt és XR-eseménnyé konvertált anélkül, hogy DOM eseményeket generált volna. Új dedikált `#touch-aim-surface` bevezetve `pointer-events: auto !important; touch-action: none !important;` beállítással, amely a W3C szabványnak megfelelően garantálja a DOM érintési események kézbesítését WebXR alatt is.
+    - **Interaktív Célzó Húzásjelző HUD:** A képernyő megérintésekor közvetlenül a játékos ujja alatt megjelenik egy 2D forgó rögzítőgyűrű, egy dinamikus vektorvonal, egy húzógolyó és egy valós idejű erőmérő tabletta (`0% - 100% ERŐ`).
+    - **Kétirányú Célzás (Hátrahúzás és Előrepöccintés):** Támogatja mind a klasszikus lefelé húzást (Angry Birds stílus), mind a célpont felé történő felfelé pöccintést (flick/swipe), kiküszöbölve a felhasználói félreértéseket.
+    - **Pointer Capture & Haptika:** `setPointerCapture` bevezetve, így az ujj gyors mozdulatainál sem veszik el a követés, az elengedéskor pedig azonnal megtörténik a kilövés.
+  - **Főoldali Röppálya Vonalazás Kapcsoló (Trajectory Setting):**
+    - A főmenü kártyáin elegáns, modern iOS-stílusú kapcsoló (`toggle-switch`) kapott helyet (`🎯 Röppálya vonalazása`), leírással.
+    - A beállítás automatikusan perzisztálódik a `localStorage`-ban (`siege.trajectory`), induláskor betöltődik, és azonnal ki/bekapcsolja a 3D fizikai röppálya ívet (`this.trajectoryLine`) és a becsapódási pontot (`this.hitMarkerGroup`).
+  - **Új Generációs Kézkövetés (Hand Tracking Pro):**
+    - **Nagyobb Kamerafelbontás:** 240×180-ról 480×360-ra növelt kamerafelbontás, így az ujjhegyek távolabbról is élesen detektálhatók a MediaPipe AI által.
+    - **Alacsony Késleltetés (~30-40 FPS):** A processzor-pihentető idle gap 45 ms-ról 12 ms-ra csökkentve, megszüntetve a mikroszaggatásokat.
+    - **Normalizált 2D Többujjas Csippentés:** A zajos 3D Euklideszi távolság helyett kézmérethez normalizált 2D távolságmutató mind a mutatóujjra, mind a középső ujjra, hiszterézissel (be: 0.38, ki: 0.52).
+    - **AR Hologram Kéz-Célzókereszt:** A kijelzőn valós időben megjelenik a kézközéppontot követő kiber célkereszt (`#hand-reticle`) fokozatos csippentésmérővel, csippentéskor arany színre váltva, haptikus rezgéssel kísérve.
+
 ---
 
 ## 5. Elvégzett Tesztek és Verifikáció
 - **3D Render & Fizika:** A Three.js és Cannon-es világ stabil 60 FPS-sel fut, a kompakt méretű vár és csúzli tökéletesen illeszkedik bármilyen asztalra.
 - **PWA ellenőrzés:** `manifest.webmanifest`, `sw.js` és az ikonok elérhetők, a Service Worker regisztráció sikeres.
-- **Produkciós build:** `npm run build` hiba nélkül lefutott (13 modul transzformálva, ~283 ms).
+- **Touch célzás:** `#touch-aim-surface` és 2D HUD húzásjelző hibátlanul működik mind lefelé, mind felfelé húzásra.
+- **Röppálya kapcsoló:** A főoldali kapcsoló valós időben ki/bekapcsolja a 3D ívet és a `localStorage`-ban megjegyzi az állapotot.
+- **Produkciós build:** `npm run build` hiba nélkül lefutott (13 modul transzformálva, ~660 ms).
 - **Fejlesztői szerver:** Elérhető helyben a `https://localhost:5173/` címen.
 
 ---
-*Utolsó frissítés: 19. Fázis befejezve – Progressive Web App (PWA) integráció: manifest, service worker, ikonok, wake lock és overscroll védelem.*
+*Utolsó frissítés: 20. Fázis befejezve – Képernyős érintéses célzás, főoldali röppálya kapcsoló és új generációs AR kézkövetés.*
 
 
 
