@@ -63,6 +63,7 @@ class WebXRApp {
     this.castleWorldPos = new THREE.Vector3(0, 0, -0.20);
     this.slingshotWorldPos = new THREE.Vector3(0, 0, 0.20);
 
+    this.wakeLock = null;
     this.init();
   }
 
@@ -230,6 +231,7 @@ class WebXRApp {
   // 🚀 Játék indítása a kiválasztott móddal közvetlenül a Főoldalról
   async launchGame(mode) {
     this.sounds.init();
+    this.requestWakeLock();
     this.controlMode = mode;
     this.slingshot.setControlMode(mode);
     this.isInGame = true;
@@ -258,6 +260,7 @@ class WebXRApp {
   // 🚪 Vissza a főoldalra: bezár minden kamerát, WebXR-t és leállítja a játékmódot
   returnToMainMenu() {
     this.isInGame = false;
+    this.releaseWakeLock();
 
     // 1. WebXR munkamenet leállítása
     if (this.renderer && this.renderer.xr && this.renderer.xr.isPresenting) {
@@ -820,8 +823,42 @@ class WebXRApp {
       this.sounds.playScore();
     }
   }
+
+  async requestWakeLock() {
+    if ('wakeLock' in navigator) {
+      try {
+        this.wakeLock = await navigator.wakeLock.request('screen');
+      } catch (e) {}
+    }
+  }
+
+  releaseWakeLock() {
+    if (this.wakeLock) {
+      try {
+        this.wakeLock.release().catch(() => {});
+      } catch (e) {}
+      this.wakeLock = null;
+    }
+  }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  new WebXRApp();
+  const app = new WebXRApp();
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && app.isInGame) {
+      app.requestWakeLock();
+    }
+  });
 });
+
+// PWA Service Worker regisztráció
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then((reg) => {
+      console.log('PWA ServiceWorker aktív:', reg.scope);
+    }).catch((err) => {
+      console.warn('PWA ServiceWorker figyelmeztetés:', err);
+    });
+  });
+}

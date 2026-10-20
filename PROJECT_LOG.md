@@ -155,16 +155,31 @@ Egy web-alapú kiterjesztett valóság (WebAR) minijáték fejlesztése, amely a
     - A talaj árnyékszűrő síkja 3×3 m-ről 1.6×1.6 m-re csökkentve, jelentős GPU fillrate megtakarítást eredményezve.
     - Automatikus csúzli lehelyezési távolság 42 cm-ről 32 cm-re finomítva.
 
+- [x] **19. Fázis:** Progressive Web App (PWA) Támogatás Integrációja:
+  - **Web App Manifest (`manifest.webmanifest`):**
+    - `display: fullscreen / standalone`, `theme_color: #070a13`, `orientation: any`, kategóriák és leírás beállítva.
+    - Teljes ikoncsalád generálva és hozzáadva a `public/icons/` mappához (192×192, 512×512, maskable 512×512).
+  - **Service Worker (`sw.js`):**
+    - Pehelykönnyű Service Worker bevezetve Stale-While-Revalidate és Cache-First stratégiákkal az azonnali (<0.3s) offline betöltéshez.
+    - Automatikus régebbi gyorsítótár-takarítás és kliens átvétel (`clients.claim()`).
+  - **Képernyő Ébrentartás (Screen Wake Lock API):**
+    - Játék közben (`launchGame`) az alkalmazás automatikusan zárolja a képernyő elalvását, megakadályozva a kijelző kikapcsolását célzás és körbesétálás közben.
+    - Főoldalra való visszatéréskor (`returnToMainMenu`) a zárolás feloldódik.
+  - **Lehúzásos Lapfrissítés Tiltása (Anti-Pull-To-Refresh):**
+    - Az `overscroll-behavior: none` beállítással megelőzve, hogy a játékos a képernyő lefelé húzásakor véletlenül újratöltse a böngészőt.
+  - **Telepítési Gomb Kezelése:**
+    - A felhasználó kérésének megfelelően nem került kihelyezésre dedikált "Telepítés alkalmazásként" gomb a felületre; a PWA a böngésző natív kezdőképernyőre helyezési mechanizmusán keresztül közvetlenül telepíthető.
+
 ---
 
 ## 5. Elvégzett Tesztek és Verifikáció
 - **3D Render & Fizika:** A Three.js és Cannon-es világ stabil 60 FPS-sel fut, a kompakt méretű vár és csúzli tökéletesen illeszkedik bármilyen asztalra.
-- **Méretezési teszt:** A vár és csúzli arányai, valamint a becsapódási fizikai impulzus harmonikus és valósághű.
-- **Produkciós build:** `npm run build` hiba nélkül lefutott (13 modul transzformálva, ~518 ms).
+- **PWA ellenőrzés:** `manifest.webmanifest`, `sw.js` és az ikonok elérhetők, a Service Worker regisztráció sikeres.
+- **Produkciós build:** `npm run build` hiba nélkül lefutott (13 modul transzformálva, ~283 ms).
 - **Fejlesztői szerver:** Elérhető helyben a `https://localhost:5173/` címen.
 
 ---
-*Utolsó frissítés: 18. Fázis befejezve – Lerakható elemek (vár, kőtömbök, talapzat, csúzli, lövedék, szkenner) optimalizálása és kompakt asztali méretre csökkentése.*
+*Utolsó frissítés: 19. Fázis befejezve – Progressive Web App (PWA) integráció: manifest, service worker, ikonok, wake lock és overscroll védelem.*
 
 
 
