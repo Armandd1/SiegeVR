@@ -110,16 +110,39 @@ Egy web-alapú kiterjesztett valóság (WebAR) minijáték fejlesztése, amely a
     - A Three.js "START AR" gombja és a virtuális fa asztal / rács teljesen eltávolítva a bundle-ből (csökkentve a bundle méretet ~26 kB-tal).
     - Az alkalmazás tiszta WebAR környezetként indul: egyetlen érintéssel közvetlenül a kamera nyílik meg, nem-támogatott környezetben pedig egyértelmű tájékoztató jelenik meg vissza gombbal.
 
+- [x] **16. Fázis:** Főoldali Játékmód Választó Menü, Teljes Kamera/Mód Leállítás Főoldalon és HUD Letisztítás:
+  - **Főoldali Játékmód Választó (Home Menu):**
+    - A webapp közvetlenül egy modern, üveghatású (glassmorphism) főmenüvel indul, ahol a felhasználó közvetlenül kiválaszthatja a kívánt játékmódot:
+      1. `📱 Telefonmozgás (6DoF)`: Fizikai hátralépés és célzás a telefonnal.
+      2. `🖐️ Kézkövetés (Air Pinch)`: Érintésmentes kézkövetés és csippentés a levegőben.
+    - A kártyákra való koppintás közvetlen felhasználói gesztusként azonnal megnyitja a kamerát és elindítja a választott játékmódot.
+  - **Kamera Megnyitási Megbízhatóság & Fallback:**
+    - `@vitejs/plugin-basic-ssl` bekapcsolva a `vite.config.js`-ben, így mobiltelefonon is érvényes a `window.isSecureContext` (a Chrome Androidon csak HTTPS alatt engedélyezi a WebXR-t és kamerát).
+    - WebXR indításnál a `hit-test` az `optionalFeatures` listába került (megelőzve az indítási elutasítást azokon az eszközökön, ahol a hit-test nem azonnal elérhető).
+    - Univerzális WebRTC Kamera Passthrough fallback került beépítésre: ha a készülék vagy böngésző nem rendelkezik natív WebXR AR-rel, az alkalmazás közvetlenül a hátlapi kamerát nyitja meg a Three.js háttérben, így a kamera garantáltan minden eszközön azonnal megnyílik.
+  - **Kamerák és Játékmódok Teljes Leállítása Főoldalon:**
+    - Amikor a játékos a `⬅️ Főoldal` gombra nyom vagy kilép az AR-ből, a `returnToMainMenu()` függvény lefut:
+      - A WebXR AR session azonnal leáll (`session.end()`).
+      - A kézkövető kamera (szelfi kamera) összes sávja azonnal leáll (`track.stop()`), a stream felszabadul, a kamera LED kialszik.
+      - A fallback hátlapi kamera azonnal leáll és a videó elem törlődik.
+      - Minden fizikai számítás és célzás leáll, a vár és csúzli állapot visszaáll.
+      - A főoldalon nulla kamera fut és minimális az erőforrás-használat.
+  - **HUD Elemek Letisztítása:**
+    - A játék közbeni képernyőről eltávolításra került a telefon módváltó gomb (`#btn-mode-select`) és a kérdőjel súgó gomb (`#btn-help`).
+    - A játék közben kizárólag a `⬅️ Főoldal` gomb és a pontszám-kijelző látható (illetve kéz módban a diszkrét kéz-állapotjelző).
+
 ---
 
 ## 5. Elvégzett Tesztek és Verifikáció
 - **3D Render & Fizika:** A Three.js és Cannon-es világ stabil 60 FPS-sel fut, a fizikai lépés és a röppálya-előrejelzés 1:1 szinkronban van.
 - **Kézkövetés teszt:** A CPU duty cycle 100%-ról ~40%-ra csökkent, a csúzli húzása folyékony 60 FPS LERP simítással mozog, a kamera sávszélessége minimálisra optimalizálva.
-- **Produkciós build:** `npm run build` hiba nélkül lefutott (13 modul transzformálva, ~471 ms, bundle méret: 685 kB).
-- **Fejlesztői szerver:** Elérhető helyben a `http://localhost:5173/` címen.
+- **Kamera és Főoldal teszt:** A főoldalon semmilyen kamera nem fut. Mód kiválasztásakor a kamera azonnal nyílik (WebXR vagy passthrough fallback), a Vissza gomb megnyomásakor minden kamera és játékmód bezáródik.
+- **Produkciós build:** `npm run build` hiba nélkül lefutott (13 modul transzformálva, ~482 ms).
+- **Fejlesztői szerver:** Elérhető helyben a `https://localhost:5173/` címen.
 
 ---
-*Utolsó frissítés: 15. Fázis befejezve – Tiszta WebAR mód, Vissza gomb, hang gomb és érintés mód eltávolítása, fejléc letisztítása.*
+*Utolsó frissítés: 16. Fázis befejezve – Főoldali módválasztó menü, kamerák és módok teljes leállítása főoldalon, HUD telefon és kérdőjel gombok eltávolítva.*
+
 
 
 

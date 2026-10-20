@@ -17,14 +17,104 @@
   <!-- 3D Canvas Konténer -->
   <div id="canvas-container"></div>
 
-  <!-- Modern Glassmorphism UI HUD - Egyszerű, letisztult és átlátható felület -->
-  <div id="ui-overlay">
+  <!-- Rejtett Háttér Webkamera a Kézkövetéshez (Kizárólag háttérben fut az AI-nak, sosem látható a képernyőn!) -->
+  <video id="hand-webcam" playsinline muted autoplay style="display:none;"></video>
+
+  <!-- 🏠 FŐOLDAL / FŐMENÜ (Játékmód Választó) -->
+  <div id="main-menu" class="main-menu-overlay">
+    <div class="main-menu-card">
+      <!-- Főoldali Fejléc és Logó -->
+      <div class="menu-brand">
+        <div class="menu-brand-icon">🏰</div>
+        <h1 class="menu-title">AR Asztali Ostrom</h1>
+        <p class="menu-subtitle">Kiterjesztett Valóságú Várromboló Aréna</p>
+      </div>
+
+      <!-- HTTPS Figyelmeztetés ha véletlenül nem biztonságos HTTP-n nyitnák meg -->
+      <div id="insecure-context-warning" class="insecure-warning hidden">
+        <span class="warning-icon">🔒</span>
+        <div class="warning-text">
+          <strong>HTTPS kapcsolat szükséges!</strong>
+          <p>A kamera és az AR működéséhez kérjük, nyisd meg az oldalt <code>https://</code> címen!</p>
+        </div>
+      </div>
+
+      <!-- Módválasztó Fejléc -->
+      <div class="menu-section-header">
+        <span class="section-badge">JÁTÉKMÓDOK</span>
+        <h2 class="section-title">Válassz vezérlést az indításhoz:</h2>
+      </div>
+
+      <!-- Két Választható Játékmód Kártya -->
+      <div class="menu-mode-grid">
+        <!-- 1. Mód: Térbeli Telefonmozgás (6DoF) -->
+        <div class="menu-mode-card card-purple" id="btn-start-phone" role="button" tabindex="0">
+          <div class="menu-mode-glow"></div>
+          <div class="menu-mode-top">
+            <span class="menu-mode-icon">📱</span>
+            <div class="menu-mode-headings">
+              <span class="menu-mode-badge badge-purple">Valódi Fizikai Élmény</span>
+              <h3 class="menu-mode-title">Telefonmozgás (6DoF)</h3>
+            </div>
+          </div>
+          <p class="menu-mode-desc">Tartsd nyomva a HÚZÁS gombot a telefonon, lépj hátra a szobában a csúzli megfeszítéséhez, majd engedd el a kilövéshez!</p>
+          <div class="btn-mode-launch btn-launch-purple">
+            <span>Indítás Telefonnal</span>
+            <span class="launch-arrow">▶</span>
+          </div>
+        </div>
+
+        <!-- 2. Mód: Kézkövetés & Csippentés (Air Pinch) -->
+        <div class="menu-mode-card card-cyan" id="btn-start-hand" role="button" tabindex="0">
+          <div class="menu-mode-glow"></div>
+          <div class="menu-mode-top">
+            <span class="menu-mode-icon">🖐️</span>
+            <div class="menu-mode-headings">
+              <span class="menu-mode-badge badge-cyan">Érintésmentes AI</span>
+              <h3 class="menu-mode-title">Kézkövetés (Air Pinch)</h3>
+            </div>
+          </div>
+          <p class="menu-mode-desc">Érintsd össze a mutató- és hüvelykujjad a levegőben a golyó megfogásához, húzd hátra a kezed, majd nyisd szét a kilövéshez!</p>
+          <div class="btn-mode-launch btn-launch-cyan">
+            <span>Indítás Kézkövetéssel</span>
+            <span class="launch-arrow">▶</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rövid 3 lépéses folyamat-útmutató a főoldalon -->
+      <div class="menu-quick-guide">
+        <div class="guide-item">
+          <span class="guide-num">1</span>
+          <span>Pásztázd az asztalt & rakd le a várat</span>
+        </div>
+        <div class="guide-item">
+          <span class="guide-num">2</span>
+          <span>Helyezd le a csúzlit</span>
+        </div>
+        <div class="guide-item">
+          <span class="guide-num">3</span>
+          <span>Célozz és dönts le minden falat!</span>
+        </div>
+      </div>
+
+      <!-- Rekord pontszám sáv -->
+      <div class="menu-highscore-bar">
+        <span class="highscore-icon">🏆</span>
+        <span>Legjobb pontszám: <strong id="menu-highscore-val">0</strong> pont</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modern Glassmorphism UI HUD (Csak játék közben aktív és látható!) -->
+  <div id="ui-overlay" class="hidden">
     <!-- Felső Fejléc -->
     <header class="hud-header">
       <div class="header-left">
+        <!-- Vissza a főoldalra gomb: bezár minden kamerát és játékmódot -->
         <button id="btn-back" class="btn-back" title="Vissza a főoldalra" aria-label="Vissza a főoldalra">
           <span class="back-icon">⬅️</span>
-          <span class="back-text">Vissza</span>
+          <span class="back-text">Főoldal</span>
         </button>
       </div>
 
@@ -35,28 +125,17 @@
           <span id="score-display">0</span>
         </div>
 
-        <!-- Vezérlési Módválasztó Gomb (Telefon / Kéz) -->
-        <button id="btn-mode-select" class="mode-select-btn" title="Vezérlési mód váltása (Telefon / Kéz)">
-          <span id="current-mode-icon">📱</span>
-          <span id="current-mode-label">Telefon</span>
-        </button>
-
         <!-- Kézkövetés Állapotjelző (csak kéz módban jelenik meg) -->
         <div id="hand-status-badge" class="hand-status-badge hidden">
           <span class="pulse-dot-cyan"></span>
           <span id="hand-status-label">🖐️ Kéz</span>
         </div>
-
-        <!-- Súgó ikon gomb -->
-        <button id="btn-help" class="icon-btn" title="Játékszabály és Súgó" aria-label="Súgó">
-          <span>❓</span>
-        </button>
       </div>
     </header>
 
-    <!-- Felső Kompakt Állapotsor (Közvetlenül a fejléc alatt, diszkrét és átlátható) -->
+    <!-- Felső Kompakt Állapotsor -->
     <div class="hud-top-subbar">
-      <!-- AR Folyamatjelző Lépések (Kompakt mini pill) -->
+      <!-- AR Folyamatjelző Lépések -->
       <div id="ar-stepper" class="ar-stepper hidden">
         <div class="step-item active" id="step-1">
           <span class="step-num">1</span>
@@ -81,7 +160,7 @@
       </div>
     </div>
 
-    <!-- 📡 TEREP- ÉS KÖRNYEZET-SZKENNELŐ ANIMÁCIÓ OVERLAY (Csak terep-felméréskor látható!) -->
+    <!-- 📡 TEREP- ÉS KÖRNYEZET-SZKENNELŐ ANIMÁCIÓ OVERLAY -->
     <div id="scanning-overlay" class="scanning-overlay hidden">
       <div class="scan-viewfinder">
         <div class="scan-corner tl"></div>
@@ -100,7 +179,7 @@
       </div>
     </div>
 
-    <!-- Telefonmozgás Mód: Kézreálló hüvelykujj FAB a jobb alsó sarokban (nem takarja a közepet!) -->
+    <!-- Telefonmozgás Mód: Kézreálló hüvelykujj FAB a jobb alsó sarokban -->
     <div id="phone-motion-container" class="phone-motion-container hidden">
       <button id="btn-phone-pull" class="btn-phone-fab" title="Tartsd nyomva & lépj hátra!">
         <span class="fab-icon">✊</span>
@@ -132,126 +211,6 @@
         </button>
       </div>
     </footer>
-  </div>
-
-  <!-- Rejtett Háttér Webkamera (A szelfi kamera tartalma SOHA NEM JELENIK MEG a képernyőn!) -->
-  <video id="hand-webcam" playsinline muted autoplay style="display:none;"></video>
-
-  <!-- 🎮 VEZÉRLÉSI MÓDVÁLASZTÓ MODÁLIS ABLAK -->
-  <div id="mode-modal" class="modal-backdrop hidden">
-    <div class="modal-card">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="modal-icon">🎮</span>
-          <h2>Válassz vezérlési módot!</h2>
-        </div>
-        <button id="btn-close-mode" class="modal-close" aria-label="Bezárás">&times;</button>
-      </div>
-
-      <div class="modal-body mode-grid">
-        <!-- 1. Mód: Térbeli Telefonmozgás -->
-        <div class="mode-card active" data-mode="PHONE_MOTION" id="card-mode-phone">
-          <div class="mode-card-icon">📱</div>
-          <div class="mode-card-info">
-            <strong>Térbeli Telefonmozgás (6DoF)</strong>
-            <p>Tartsd nyomva a HÚZÁS gombot, és lépj hátra a telefonnal a szobában! Az ujjad felengedésével kilövöd a golyót.</p>
-            <span class="mode-tag tag-purple">Valódi Fizikai Élmény</span>
-          </div>
-          <button class="btn btn-sm btn-secondary mode-select-action">Kiválasztás</button>
-        </div>
-
-        <!-- 2. Mód: Kézkövetés & Csippentés -->
-        <div class="mode-card" data-mode="HAND_TRACKING" id="card-mode-hand">
-          <div class="mode-card-icon">🖐️</div>
-          <div class="mode-card-info">
-            <strong>Kézkövetés & Csippentés (Air Pinch)</strong>
-            <p>Érintsd össze a mutató- és hüvelykujjad a levegőben, húzd hátra a kezed, majd nyisd szét a kilövéshez!</p>
-            <span class="mode-tag tag-cyan">Érintésmentes AI</span>
-          </div>
-          <button class="btn btn-sm btn-accent mode-select-action">Kiválasztás</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 🚀 WebAR Indító Képernyő (Egyetlen érintéssel közvetlenül a kamerát nyitja meg) -->
-  <div id="ar-gate-overlay" class="ar-gate-overlay">
-    <div class="ar-gate-card">
-      <div class="ar-gate-glow"></div>
-      <div class="ar-gate-icon">📱</div>
-      <h2>AR Asztali Ostrom</h2>
-      <p>A játék kiterjesztett valóságban (WebAR) közvetlenül az asztalodra vetíti a várat.</p>
-      <button id="btn-enter-ar" class="btn btn-primary btn-gate">
-        <span class="btn-icon">✨</span>
-        <span>Koppints a játékhoz</span>
-      </button>
-      <span class="ar-gate-sub">A képernyő megérintésével azonnal megnyílik a kamera</span>
-    </div>
-  </div>
-
-  <!-- ⚠️ WebAR Nem Támogatott Képernyő (Ha a böngésző nem támogatja a WebXR-t) -->
-  <div id="ar-unsupported-overlay" class="ar-gate-overlay hidden">
-    <div class="ar-gate-card error">
-      <div class="ar-gate-icon">⚠️</div>
-      <h2>WebAR Szükséges</h2>
-      <p>Ez a játék kizárólag kiterjesztett valóságban (AR) játszható.</p>
-      <p class="ar-gate-subtext">Kérjük, nyisd meg az alkalmazást egy WebXR-képes Android telefonon Chrome böngészőben!</p>
-      <button id="btn-unsupported-back" class="btn btn-primary btn-gate">
-        <span class="btn-icon">⬅️</span>
-        <span>Vissza a főoldalra</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- Súgó / Útmutató Modális Ablak -->
-  <div id="help-modal" class="modal-backdrop hidden">
-    <div class="modal-card">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="modal-icon">🏰</span>
-          <h2>Hogyan játssz?</h2>
-        </div>
-        <button id="btn-close-help" class="modal-close" aria-label="Bezárás">&times;</button>
-      </div>
-
-      <div class="modal-body">
-        <div class="help-step">
-          <div class="help-step-icon">📱</div>
-          <div class="help-step-content">
-            <strong>1. Asztal beolvasása (WebAR)</strong>
-            <p>Mozgasd a telefont, amíg a kék célzókarika megjelenik az asztalon, majd koppints a vár felépítéséhez.</p>
-          </div>
-        </div>
-
-        <div class="help-step">
-          <div class="help-step-icon">🎯</div>
-          <div class="help-step-content">
-            <strong>2. Csúzli lerakása</strong>
-            <p>Lépj hátra 1-2 lépést a telefonnal, irányítsd az asztal felé a kamerát, és koppints a csúzli lehelyezéséhez (vagy használd az Auto csúzli gombot).</p>
-          </div>
-        </div>
-
-        <div class="help-step">
-          <div class="help-step-icon">🎮</div>
-          <div class="help-step-content">
-            <strong>3. Kétféle vezérlési mód</strong>
-            <p>A fejlécben a 📱 gombbal válthatsz: telefonnal hátralépés (📱) vagy kézcsippentés a levegőben (🖐️).</p>
-          </div>
-        </div>
-
-        <div class="help-step">
-          <div class="help-step-icon">🚶</div>
-          <div class="help-step-content">
-            <strong>4. Sétálj körbe az asztalon!</strong>
-            <p>A telefon térbeli követésével körbejárhatod a virtuális várat, és a leggyengébb pontokra célozhatsz.</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <button id="btn-dismiss-help" class="btn btn-primary btn-full">Értem, játszunk!</button>
-      </div>
-    </div>
   </div>
 
   <script type="module" src="./src/main.js"></script>
