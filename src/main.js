@@ -25,6 +25,8 @@ class WebXRApp {
     this.btnStartHand = document.getElementById('btn-start-hand');
     this.menuHighscoreVal = document.getElementById('menu-highscore-val');
     this.insecureWarning = document.getElementById('insecure-context-warning');
+    this.arModeBadge = document.getElementById('ar-mode-badge');
+    this.arModeText = document.getElementById('ar-mode-text');
 
     // Játékállapot és vezérlés
     this.isInGame = false;
@@ -366,6 +368,10 @@ class WebXRApp {
               this.returnToMainMenu();
             });
             await this.renderer.xr.setSession(session);
+            if (this.arModeBadge && this.arModeText) {
+              this.arModeBadge.className = 'ar-mode-pill webxr';
+              this.arModeText.innerText = 'WebXR AR';
+            }
             if (this.arStepper) this.arStepper.classList.remove('hidden');
             this.startPlacement(1);
           })
@@ -377,6 +383,10 @@ class WebXRApp {
                   this.returnToMainMenu();
                 });
                 await this.renderer.xr.setSession(session);
+                if (this.arModeBadge && this.arModeText) {
+                  this.arModeBadge.className = 'ar-mode-pill webxr';
+                  this.arModeText.innerText = 'WebXR AR';
+                }
                 if (this.arStepper) this.arStepper.classList.remove('hidden');
                 this.startPlacement(1);
               })
@@ -432,6 +442,11 @@ class WebXRApp {
       await video.play().catch(err => console.warn('Kameravideó play figyelmeztetés:', err));
       this.fallbackVideo = video;
       this.isFallbackAR = true;
+
+      if (this.arModeBadge && this.arModeText) {
+        this.arModeBadge.className = 'ar-mode-pill webrtc';
+        this.arModeText.innerText = 'Kamera AR';
+      }
 
       if (this.arStepper) this.arStepper.classList.remove('hidden');
       this.startPlacement(1);
