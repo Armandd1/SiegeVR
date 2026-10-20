@@ -131,17 +131,40 @@ Egy web-alapú kiterjesztett valóság (WebAR) minijáték fejlesztése, amely a
     - A játék közbeni képernyőről eltávolításra került a telefon módváltó gomb (`#btn-mode-select`) és a kérdőjel súgó gomb (`#btn-help`).
     - A játék közben kizárólag a `⬅️ Főoldal` gomb és a pontszám-kijelző látható (illetve kéz módban a diszkrét kéz-állapotjelző).
 
+- [x] **17. Fázis:** Célzási Segítség Teljes Eltávolítása (HUD és 3D Segédek):
+  - **Képernyős Útmutató (HUD Hint Pill) Eltávolítása:**
+    - A képernyő felső részén korábban megjelenő célzási és erő-visszajelző lebegő tabletta (`#slingshot-hint`) törölve az [index.html](file:///c:/mesteriharmadik/VR/index.html) és [src/style.css](file:///c:/mesteriharmadik/VR/src/style.css) fájlokból.
+  - **3D Röppálya-Ív és Taktikai Célkereszt Kikapcsolása:**
+    - A 3D világban megjelenített előrejelző trajektória vonal (`trajectoryLine`) és a várfalra/asztalra vetített piros célkereszt (`hitMarkerGroup`) kikapcsolva az [src/slingshot.js](file:///c:/mesteriharmadik/VR/src/slingshot.js) modulban.
+    - A csúzli húzását jelző segédkarika (`pullHelperRing`) elrejtve.
+  - **CPU Megtakarítás:**
+    - Az `updateTrajectory()` folyamatos sugármetszései és ütközésvizsgálatai teljesen leállítva, így a célzás közbeni CPU és GPU használat minimálisra csökkent, a játékos pedig tiszta, valódi fizikai érzék alapján lőhet.
+
+- [x] **18. Fázis:** Lerakható Elemek Optimalizálása és Kompakt Asztali Méretezés:
+  - **Várelemek és Talapzat Méretezése:**
+    - A kőtömbök mérete (`BLOCK_SIZE`) 8.8×5.2×5.2 cm-ről 5.4×3.2×3.2 cm-re csökkentve (~60%-os finomítás). Ezzel a teljes vár szélessége ~44 cm-ről ~27 cm-re mérséklődött, így bármilyen normál méretű íróasztalon vagy dohányzóasztalon kényelmesen elfér.
+    - A kőtalapzat (`PLINTH_SIZE`) 62×48 cm-ről 38×28 cm-re csökkentve (vastagsága 1.8 cm-ről 1.2 cm-re).
+    - A fizikai tömegek arányosan skálázva a kisebb kőtömbökhöz (0.45 – 0.18 kg), így a becsapódási dinamika látványos és stabil maradt.
+  - **Csúzli és Lövedék Kompakt Méretezése:**
+    - A csúzli magassága ~18 cm-ről ~9.5 cm-re mérséklődött (`stemHeight: 0.075`, `forkWidth: 0.060`, `forkHeight: 0.046`).
+    - A talapzat, a villák és a gumiszalagok vastagsága arányosan finomítva, a szellemelőnézet és a valós csúzli 1:1 szinkronban csökkentve.
+    - A tüzes ostromlövedék átmérője 5.0 cm-ről 3.2 cm-re (`radius: 0.016`), tömege 1.15 kg-ról 0.38 kg-ra módosítva.
+    - A húzási határok (`PULL_LIMITS`) és kilövési sebesség hozzáigazítva a kompakt 30-35 cm-es asztali lőtávolsághoz.
+  - **Felületi Szkenner és Árnyéksík Optimalizálás:**
+    - A `SurfaceScanner` koordináta-hálója, célzóköre és sonárhullámai ~65 cm-es asztali tartományra méretezve.
+    - A talaj árnyékszűrő síkja 3×3 m-ről 1.6×1.6 m-re csökkentve, jelentős GPU fillrate megtakarítást eredményezve.
+    - Automatikus csúzli lehelyezési távolság 42 cm-ről 32 cm-re finomítva.
+
 ---
 
 ## 5. Elvégzett Tesztek és Verifikáció
-- **3D Render & Fizika:** A Three.js és Cannon-es világ stabil 60 FPS-sel fut, a fizikai lépés és a röppálya-előrejelzés 1:1 szinkronban van.
-- **Kézkövetés teszt:** A CPU duty cycle 100%-ról ~40%-ra csökkent, a csúzli húzása folyékony 60 FPS LERP simítással mozog, a kamera sávszélessége minimálisra optimalizálva.
-- **Kamera és Főoldal teszt:** A főoldalon semmilyen kamera nem fut. Mód kiválasztásakor a kamera azonnal nyílik (WebXR vagy passthrough fallback), a Vissza gomb megnyomásakor minden kamera és játékmód bezáródik.
-- **Produkciós build:** `npm run build` hiba nélkül lefutott (13 modul transzformálva, ~482 ms).
+- **3D Render & Fizika:** A Three.js és Cannon-es világ stabil 60 FPS-sel fut, a kompakt méretű vár és csúzli tökéletesen illeszkedik bármilyen asztalra.
+- **Méretezési teszt:** A vár és csúzli arányai, valamint a becsapódási fizikai impulzus harmonikus és valósághű.
+- **Produkciós build:** `npm run build` hiba nélkül lefutott (13 modul transzformálva, ~518 ms).
 - **Fejlesztői szerver:** Elérhető helyben a `https://localhost:5173/` címen.
 
 ---
-*Utolsó frissítés: 16. Fázis befejezve – Főoldali módválasztó menü, kamerák és módok teljes leállítása főoldalon, HUD telefon és kérdőjel gombok eltávolítva.*
+*Utolsó frissítés: 18. Fázis befejezve – Lerakható elemek (vár, kőtömbök, talapzat, csúzli, lövedék, szkenner) optimalizálása és kompakt asztali méretre csökkentése.*
 
 
 

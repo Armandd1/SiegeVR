@@ -308,31 +308,7 @@ body, html {
   border-radius: 1px;
 }
 
-/* Felső diszkrét útmutató pill */
-.slingshot-hint {
-  background: rgba(15, 23, 42, 0.82);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  padding: 0.32rem 0.85rem;
-  border-radius: 9999px;
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  color: #f8fafc;
-  font-size: 0.78rem;
-  font-weight: 600;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
-  text-align: center;
-  max-width: 380px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  pointer-events: none;
-  white-space: nowrap;
-}
 
-.hint-icon {
-  font-size: 0.95rem;
-}
 
 /* Telefonmozgás Mód: Kézreálló hüvelykujj FAB a jobb alsó sarokban (nem takarja a kamera közepét!) */
 .phone-motion-container {
@@ -992,11 +968,7 @@ body, html {
     font-size: 0.66rem;
   }
 
-  .slingshot-hint {
-    font-size: 0.72rem;
-    padding: 0.28rem 0.75rem;
-    max-width: 300px;
-  }
+
 
   .hud-dock {
     padding: 0.28rem 0.45rem;

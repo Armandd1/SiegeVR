@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { BLOCK_SIZE } from './physics.js';
 
 export const CASTLE_LAYOUTS = ['fortress', 'pyramid', 'twin_towers', 'citadel'];
-const PLINTH_SIZE = { x: 0.62, z: 0.48 };
+const PLINTH_SIZE = { x: 0.38, z: 0.28 };
 
 export class CastleBuilder {
   constructor(scene, physics) {
@@ -12,7 +12,7 @@ export class CastleBuilder {
     this.foundationMeshes = [];
     this.allTargetMeshes = [];
     this.castleBounds = new THREE.Box3();
-    this.baseOffsetY = 0.018; // 1.8 cm-es megerősített kőtalapzat
+    this.baseOffsetY = 0.012; // 1.2 cm-es finom kompakt kőtalapzat
 
     // A vár aktuális állapota (pozíció, elforgatás, típus) – az újraépítés ugyanezt állítja vissza
     this.currentLayout = null;
@@ -226,10 +226,10 @@ export class CastleBuilder {
           const startX = -((count - 1) * bx) / 2;
           const mat = layer === maxLayers - 1 ? 'accent' : 'stone';
           for (let i = 0; i < count; i++) {
-            add(startX + i * bx, layer, 0, mat, 1.15 - layer * 0.18);
+            add(startX + i * bx, layer, 0, mat, 0.45 - layer * 0.07);
           }
         }
-        add(0, maxLayers, 0, 'accent', 0.4); // Csúcsbástya
+        add(0, maxLayers, 0, 'accent', 0.18); // Csúcsbástya
         break;
       }
 
@@ -238,14 +238,14 @@ export class CastleBuilder {
         const towerH = 4;
         const half = bx; // a két torony pontosan 2 kő távolságra
         for (let layer = 0; layer < towerH; layer++) {
-          const mass = 1.1 - layer * 0.12;
+          const mass = 0.42 - layer * 0.05;
           add(-half, layer, 0, 'stone', mass);
           add(half, layer, 0, 'stone', mass);
-          if (layer === 1) add(0, layer, 0, 'stone', 0.9);      // kő áthidaló a kapu fölött
-          else if (layer === 2) add(0, layer, 0, 'wood', 0.6);  // fa függőhíd
+          if (layer === 1) add(0, layer, 0, 'stone', 0.35);      // kő áthidaló a kapu fölött
+          else if (layer === 2) add(0, layer, 0, 'wood', 0.22);  // fa függőhíd
         }
-        add(-half, towerH, 0, 'accent', 0.45);
-        add(half, towerH, 0, 'accent', 0.45);
+        add(-half, towerH, 0, 'accent', 0.18);
+        add(half, towerH, 0, 'accent', 0.18);
         break;
       }
 
@@ -255,13 +255,13 @@ export class CastleBuilder {
           for (let r = -1; r <= 1; r++) {
             for (let c = -1; c <= 1; c++) {
               if (layer === 1 && r === 0 && c === 0) continue;
-              add(c * bx, layer, r * bz, 'stone', 1.1 - layer * 0.15);
+              add(c * bx, layer, r * bz, 'stone', 0.42 - layer * 0.06);
             }
           }
         }
         // 4 sarokbástya + központi őrtorony
-        [-1, 1].forEach(r => [-1, 1].forEach(c => add(c * bx, 3, r * bz, 'accent', 0.4)));
-        add(0, 3, 0, 'wood', 0.55);
+        [-1, 1].forEach(r => [-1, 1].forEach(c => add(c * bx, 3, r * bz, 'accent', 0.16)));
+        add(0, 3, 0, 'wood', 0.22);
         break;
       }
 
@@ -270,14 +270,14 @@ export class CastleBuilder {
       default: {
         for (let c = 0; c < 5; c++) {
           if (c === 2) continue; // kapu rés
-          add((c - 2) * bx, 0, 0, 'stone', 1.15);
+          add((c - 2) * bx, 0, 0, 'stone', 0.45);
         }
         for (let c = 0; c < 4; c++) {
-          add((c - 1.5) * bx, 1, 0, (c === 1 || c === 2) ? 'wood' : 'stone', 0.95); // áthidaló gerenda
+          add((c - 1.5) * bx, 1, 0, (c === 1 || c === 2) ? 'wood' : 'stone', 0.38); // áthidaló gerenda
         }
-        for (let c = 0; c < 5; c++) add((c - 2) * bx, 2, 0, 'stone', 0.85);
-        for (let c = 0; c < 4; c++) add((c - 1.5) * bx, 3, 0, 'stone', 0.75);
-        [-1.5, -0.5, 0.5, 1.5].forEach(o => add(o * bx, 4, 0, 'accent', 0.45)); // bástyafokok
+        for (let c = 0; c < 5; c++) add((c - 2) * bx, 2, 0, 'stone', 0.34);
+        for (let c = 0; c < 4; c++) add((c - 1.5) * bx, 3, 0, 'stone', 0.30);
+        [-1.5, -0.5, 0.5, 1.5].forEach(o => add(o * bx, 4, 0, 'accent', 0.18)); // bástyafokok
         break;
       }
     }
@@ -358,7 +358,7 @@ export class CastleBuilder {
     this.foundationMeshes.push(plinthMesh);
   }
 
-  createBlock(worldX, worldY, worldZ, material, mass = 0.85) {
+  createBlock(worldX, worldY, worldZ, material, mass = 0.35) {
     const mesh = new THREE.Mesh(this.boxGeometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;

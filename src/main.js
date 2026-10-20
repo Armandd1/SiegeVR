@@ -60,8 +60,8 @@ class WebXRApp {
     this.fallbackCameraStream = null;
     this.fallbackVideo = null;
     this.stage = 'PLACE_CASTLE'; // 'PLACE_CASTLE' -> 'PLACE_SLINGSHOT' -> 'BATTLE'
-    this.castleWorldPos = new THREE.Vector3(0, 0, -0.32);
-    this.slingshotWorldPos = new THREE.Vector3(0, 0, 0.32);
+    this.castleWorldPos = new THREE.Vector3(0, 0, -0.20);
+    this.slingshotWorldPos = new THREE.Vector3(0, 0, 0.20);
 
     this.init();
   }
@@ -111,9 +111,9 @@ class WebXRApp {
     // 4. Területfeltérképező és animált felületi szkenner (SurfaceScanner)
     this.scanner = new SurfaceScanner(this.scene);
 
-    // 5. Árnyékfelfogó talaj AR módhoz
+    // 5. Árnyékfelfogó talaj AR módhoz (kompakt asztali méret: 1.6 x 1.6 m)
     this.shadowPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(3, 3).rotateX(-Math.PI / 2),
+      new THREE.PlaneGeometry(1.6, 1.6).rotateX(-Math.PI / 2),
       new THREE.ShadowMaterial({ opacity: 0.4 })
     );
     this.shadowPlane.receiveShadow = true;
@@ -138,14 +138,7 @@ class WebXRApp {
         this.sounds.playImpact();
       },
       () => this.sounds.playTension(),
-      (powerPercent, targetName, wasCanceled) => {
-        if (wasCanceled) {
-          this.setHint('🏹', 'Lövés visszavonva. Húzd hátra a célzáshoz!');
-        } else {
-          const targetTxt = targetName ? `🎯 ${targetName}` : '🎯 Célzás';
-          this.setHint('🏹', `${targetTxt} (${powerPercent}%) — Engedd el a kilövéshez!`);
-        }
-      }
+      null
     );
     this.slingshot.setCastle(this.castle);
     this.slingshot.setEffects(this.effects);
@@ -468,7 +461,7 @@ class WebXRApp {
       }
 
       const initialPos = this.scanner.getPosition();
-      const isValid = initialPos.distanceTo(this.castleWorldPos) >= 0.16;
+      const isValid = initialPos.distanceTo(this.castleWorldPos) >= 0.11;
       this.slingshot.showGhost(initialPos, this.castleWorldPos);
       this.slingshot.updateGhost(initialPos, this.castleWorldPos, isValid);
       this.setHint('🎯', '2. Lépés: KOPPINTS a CSÚZLI helyére, vagy nyomd meg az Auto csúzli gombot!');
@@ -495,7 +488,7 @@ class WebXRApp {
   }
 
   confirmSlingshotPlacement(pos) {
-    if (pos.distanceTo(this.castleWorldPos) < 0.16) {
+    if (pos.distanceTo(this.castleWorldPos) < 0.11) {
       this.setHint('⚠️', 'Túl közel van a várhoz! Helyezd el távolabb a csúzlit.');
       this.sounds.triggerHaptic(20);
       return;
@@ -522,7 +515,7 @@ class WebXRApp {
     if (dir.lengthSq() < 0.01) {
       dir.set(0, 0, 1);
     }
-    const autoPos = this.castleWorldPos.clone().addScaledVector(dir, 0.42);
+    const autoPos = this.castleWorldPos.clone().addScaledVector(dir, 0.32);
     autoPos.y = this.castleWorldPos.y;
 
     this.confirmSlingshotPlacement(autoPos);
@@ -542,7 +535,7 @@ class WebXRApp {
     if (this.stage === 'PLACE_SLINGSHOT') {
       const pos = (this.scanner.hasPose || this.scanner.active)
         ? this.scanner.getPosition()
-        : this.castleWorldPos.clone().add(new THREE.Vector3(0, 0, 0.40));
+        : this.castleWorldPos.clone().add(new THREE.Vector3(0, 0, 0.32));
       this.confirmSlingshotPlacement(pos);
     }
   }
@@ -723,7 +716,7 @@ class WebXRApp {
                 this.scanStatusText.innerText = isHorizontal ? '✨ Felület rögzítve! KOPPINTS a VÁR lerakásához.' : '⚠️ Vízszintes felület szükséges!';
               }
             } else if (this.stage === 'PLACE_SLINGSHOT') {
-              const isValid = scanPos.distanceTo(this.castleWorldPos) >= 0.16;
+              const isValid = scanPos.distanceTo(this.castleWorldPos) >= 0.11;
               this.slingshot.updateGhost(scanPos, this.castleWorldPos, isValid);
               if (!isValid) {
                 this.setHint('⚠️', 'Túl közel a várhoz! Lépj hátrébb az asztal mellett.');
@@ -754,13 +747,13 @@ class WebXRApp {
       // Fallback kamera módban frissítjük az alap pozíciókat
       if (this.stage === 'PLACE_CASTLE' && this.castle.ghostGroup) {
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-        const ghostPos = this.camera.position.clone().addScaledVector(dir, 0.65);
-        ghostPos.y = -0.15;
+        const ghostPos = this.camera.position.clone().addScaledVector(dir, 0.48);
+        ghostPos.y = -0.12;
         this.castle.updateGhostPosition(ghostPos, 0);
       } else if (this.stage === 'PLACE_SLINGSHOT' && this.slingshot.ghostGroup) {
         const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-        const ghostPos = this.camera.position.clone().addScaledVector(dir, 0.35);
-        ghostPos.y = -0.15;
+        const ghostPos = this.camera.position.clone().addScaledVector(dir, 0.24);
+        ghostPos.y = -0.12;
         this.slingshot.updateGhost(ghostPos, this.castleWorldPos, true);
       }
     }

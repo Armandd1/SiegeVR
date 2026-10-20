@@ -56,9 +56,9 @@ export class SurfaceScanner {
     this.gridGroup = new THREE.Group();
     this.gridGroup.position.y = 0.001;
 
-    // Kör alakú, finom koordináta-háló a vizsgált felületre vetítve (átmérő: 1.2 m)
+    // Kör alakú, finom koordináta-háló a vizsgált felületre vetítve (átmérő: ~65 cm asztali méret)
     const segments = 32;
-    const gridCircleGeo = new THREE.CircleGeometry(0.55, segments);
+    const gridCircleGeo = new THREE.CircleGeometry(0.32, segments);
     gridCircleGeo.rotateX(-Math.PI / 2);
 
     this.gridMat = new THREE.MeshBasicMaterial({
@@ -80,15 +80,15 @@ export class SurfaceScanner {
 
     const crossGeo = new THREE.BufferGeometry();
     const crossPoints = new Float32Array([
-      -0.5, 0.001, 0,   0.5, 0.001, 0,
-      0, 0.001, -0.5,   0, 0.001, 0.5
+      -0.28, 0.001, 0,   0.28, 0.001, 0,
+      0, 0.001, -0.28,   0, 0.001, 0.28
     ]);
     crossGeo.setAttribute('position', new THREE.BufferAttribute(crossPoints, 3));
     this.scanCross = new THREE.LineSegments(crossGeo, lineMat);
     this.gridGroup.add(this.scanCross);
 
     // Animált terep-szkennelő lézersugár csík (oda-vissza pásztáz a felületen)
-    const laserGeo = new THREE.PlaneGeometry(0.85, 0.018);
+    const laserGeo = new THREE.PlaneGeometry(0.50, 0.012);
     laserGeo.rotateX(-Math.PI / 2);
     this.laserMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
@@ -103,8 +103,8 @@ export class SurfaceScanner {
 
     // 4 holografikus sarokrögzítő (terület határolók a pásztázott zóna körül)
     const bracketMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8 });
-    const bSize = 0.38;
-    const bArm = 0.08;
+    const bSize = 0.22;
+    const bArm = 0.05;
     [-1, 1].forEach(sx => {
       [-1, 1].forEach(sz => {
         const bg = new THREE.BufferGeometry();
@@ -128,7 +128,7 @@ export class SurfaceScanner {
     this.reticleGroup.position.y = 0.003;
 
     // 1. Belső pulzáló célzógyűrű
-    const innerGeo = new THREE.RingGeometry(0.045, 0.062, 32);
+    const innerGeo = new THREE.RingGeometry(0.030, 0.042, 32);
     innerGeo.rotateX(-Math.PI / 2);
     this.innerMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
@@ -140,7 +140,7 @@ export class SurfaceScanner {
     this.reticleGroup.add(this.innerRing);
 
     // 2. Külső forgó mérőgyűrű szaggatott rovátkákkal
-    const outerGeo = new THREE.RingGeometry(0.085, 0.098, 40);
+    const outerGeo = new THREE.RingGeometry(0.055, 0.065, 36);
     outerGeo.rotateX(-Math.PI / 2);
     this.outerMat = new THREE.MeshBasicMaterial({
       color: 0x0ea5e9,
@@ -160,16 +160,16 @@ export class SurfaceScanner {
     });
     for (let i = 0; i < 4; i++) {
       const angle = (i * Math.PI) / 2;
-      const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.016, 0.004), tickMat);
+      const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.012, 0.003), tickMat);
       tick.rotateX(-Math.PI / 2);
       tick.rotation.z = angle;
-      tick.position.set(Math.cos(angle) * 0.115, 0.001, Math.sin(angle) * 0.115);
+      tick.position.set(Math.cos(angle) * 0.078, 0.001, Math.sin(angle) * 0.078);
       this.reticleGroup.add(tick);
     }
 
     // 4. Célzópont a középpontban
     const centerDot = new THREE.Mesh(
-      new THREE.CircleGeometry(0.008, 16).rotateX(-Math.PI / 2),
+      new THREE.CircleGeometry(0.005, 16).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide })
     );
     centerDot.position.y = 0.002;
@@ -250,8 +250,8 @@ export class SurfaceScanner {
     const wavePeriod = 1.6; // másodperc egy hullámciklus
     for (const ring of this.sonarRings) {
       const cycleProgress = ((this.time / wavePeriod) + ring.offset) % 1.0;
-      // 0.08m-től 0.55m sugarig tágul a felületen
-      const scale = 1.0 + cycleProgress * 8.5;
+      // 0.05m-től 0.32m sugarig tágul a felületen
+      const scale = 1.0 + cycleProgress * 4.8;
       ring.mesh.scale.set(scale, scale, scale);
 
       // Fényerő görbe: kezdetben látható, a szélén elhalványul
@@ -265,7 +265,7 @@ export class SurfaceScanner {
       this.gridMat.opacity = this.isPlaneValid ? pulse : 0.08;
     }
     if (this.laserSweep && this.laserMat) {
-      const sweepZ = Math.sin(this.time * 3.2) * 0.38;
+      const sweepZ = Math.sin(this.time * 3.2) * 0.22;
       this.laserSweep.position.z = sweepZ;
       this.laserMat.opacity = this.isPlaneValid ? 0.65 + 0.25 * Math.sin(this.time * 6) : 0.25;
     }
