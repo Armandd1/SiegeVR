@@ -63,8 +63,19 @@ class WebXRApp {
     this.stage = 'PLACE_CASTLE'; // 'PLACE_CASTLE' -> 'PLACE_SLINGSHOT' -> 'BATTLE'
     this.castleWorldPos = new THREE.Vector3(0, 0, -0.20);
     this.slingshotWorldPos = new THREE.Vector3(0, 0, 0.20);
-
     this.wakeLock = null;
+
+    // WebXR képesség előzetes felmérése betöltéskor (hogy kattintáskor azonnal, szinkronban indulhasson a WebXR)
+    this.isXRSupported = false;
+    if (navigator.xr && navigator.xr.isSessionSupported) {
+      navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+        this.isXRSupported = supported;
+        console.log('WebXR immersive-ar támogatott:', supported);
+      }).catch(() => {
+        this.isXRSupported = false;
+      });
+    }
+
     this.init();
   }
 
@@ -231,7 +242,7 @@ class WebXRApp {
   }
 
   // 🚀 Játék indítása a kiválasztott móddal közvetlenül a Főoldalról
-  async launchGame(mode) {
+  launchGame(mode) {
     this.sounds.init();
     this.requestWakeLock();
     this.controlMode = mode;
@@ -263,8 +274,8 @@ class WebXRApp {
       this.setHint('🖐️', 'Kézkövetés: Csippents a levegőben a golyó megfogásához!');
     }
 
-    // Kamera és AR indítása
-    await this.startAR();
+    // Kamera és AR indítása KÖZVETLENÜL a kattintási felhasználói gesztusból (szinkronban)
+    this.startAR();
   }
 
   // 🚪 Vissza a főoldalra: bezár minden kamerát, WebXR-t és leállítja a játékmódot
@@ -337,90 +348,98 @@ class WebXRApp {
     }
   }
 
-  // 📷 AR / Kamera Indítása: Elsődlegesen natív WebXR, másodlagosan automatikus WebRTC kamera passthrough
-  async startAR() {
-    let sessionStarted = false;
+  // 📷 AR / Kamera Indítása: Elsődlegesen natív WebXR szinkron gesztusból, másodlagosan WebRTC fallback
+  startAR() {
+    // 1. Megpróbáljuk elindítani a natív WebXR 'immersive-ar' munkamenetet közvetlenül a felhasználói kattintásból
+    if (navigator.xr) {
+      const sessionInit = {
+        requiredFeatures: ['hit-test'],
+        optionalFeatures: ['dom-overlay', 'hands'],
+        domOverlay: { root: document.getElementById('ui-overlay') }
+      };
 
-    // 1. Megpróbáljuk elindítani a natív WebXR 'immersive-ar' munkamenetet
-    if (navigator.xr && navigator.xr.isSessionSupported) {
       try {
-        const supported = await navigator.xr.isSessionSupported('immersive-ar');
-        if (supported) {
-          let session = null;
-          try {
-            session = await navigator.xr.requestSession('immersive-ar', {
-              optionalFeatures: ['hit-test', 'dom-overlay', 'hands'],
-              domOverlay: { root: document.getElementById('ui-overlay') }
+        this.renderer.xr.setReferenceSpaceType('local');
+        navigator.xr.requestSession('immersive-ar', sessionInit)
+          .then(async (session) => {
+            session.addEventListener('end', () => {
+              this.returnToMainMenu();
             });
-          } catch (overlayErr) {
-            console.warn('dom-overlay elutasítva, újrapróbálás anélkül:', overlayErr);
-            session = await navigator.xr.requestSession('immersive-ar', {
-              optionalFeatures: ['hit-test', 'hands']
-            });
-          }
-
-          if (session) {
             await this.renderer.xr.setSession(session);
-            sessionStarted = true;
-          }
-        }
-      } catch (xrErr) {
-        console.warn('WebXR AR sikertelen, fallback kamerára váltás:', xrErr);
-      }
-    }
-
-    // 2. Ha a telefon vagy a böngésző nem támogatja a natív WebXR-t, a valódi hátlapi kamerát nyitjuk meg
-    if (!sessionStarted) {
-      try {
-        await this.startFallbackCamera();
-        sessionStarted = true;
-      } catch (camErr) {
-        console.error('Kamera megnyitási hiba:', camErr);
-        alert('Nem sikerült megnyitni a kamerát. Ellenőrizd a kamera-engedélyeket és használd a HTTPS kapcsolatot!');
-        this.returnToMainMenu();
+            if (this.arStepper) this.arStepper.classList.remove('hidden');
+            this.startPlacement(1);
+          })
+          .catch((xrErr) => {
+            console.warn('WebXR AR sikertelen (vagy dom-overlay elutasítva), újrapróbálás vagy fallback kamera:', xrErr);
+            navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['hit-test'], optionalFeatures: ['hands'] })
+              .then(async (session) => {
+                session.addEventListener('end', () => {
+                  this.returnToMainMenu();
+                });
+                await this.renderer.xr.setSession(session);
+                if (this.arStepper) this.arStepper.classList.remove('hidden');
+                this.startPlacement(1);
+              })
+              .catch(() => {
+                this.startFallbackCamera();
+              });
+          });
         return;
+      } catch (e) {
+        console.warn('WebXR szinkron kivétel, fallback kamerára váltás:', e);
       }
     }
 
-    if (this.arStepper) this.arStepper.classList.remove('hidden');
-    this.startPlacement(1);
+    // 2. Ha nem támogatott a WebXR, fallback környezeti kamerát indítunk
+    this.startFallbackCamera();
   }
 
   // 📹 WebRTC Háttér Kamera Passthrough (ha a natív WebXR nem érhető el a telefonon)
   async startFallbackCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('A böngésző nem támogatja a kamerát');
+      alert('A böngésző nem támogatja a kamerát vagy nem HTTPS kapcsolatot használsz.');
+      this.returnToMainMenu();
+      return;
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      },
-      audio: false
-    });
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
 
-    this.fallbackCameraStream = stream;
+      this.fallbackCameraStream = stream;
 
-    let video = document.getElementById('ar-camera-feed');
-    if (!video) {
-      video = document.createElement('video');
-      video.id = 'ar-camera-feed';
-      video.setAttribute('playsinline', '');
-      video.setAttribute('webkit-playsinline', '');
-      video.playsInline = true;
-      video.muted = true;
-      video.setAttribute('muted', '');
-      video.autoplay = true;
-      document.body.prepend(video);
+      let video = document.getElementById('ar-camera-feed');
+      if (!video) {
+        video = document.createElement('video');
+        video.id = 'ar-camera-feed';
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
+        video.playsInline = true;
+        video.muted = true;
+        video.setAttribute('muted', '');
+        video.autoplay = true;
+        document.body.prepend(video);
+      }
+
+      video.classList.remove('hidden');
+      video.srcObject = stream;
+      await video.play().catch(err => console.warn('Kameravideó play figyelmeztetés:', err));
+      this.fallbackVideo = video;
+      this.isFallbackAR = true;
+
+      if (this.arStepper) this.arStepper.classList.remove('hidden');
+      this.startPlacement(1);
+    } catch (camErr) {
+      console.error('Kamera megnyitási hiba:', camErr);
+      alert('Nem sikerült megnyitni a kamerát. Kérjük, engedélyezd a kamerahasználatot a böngészőben!');
+      this.returnToMainMenu();
     }
-
-    video.classList.remove('hidden');
-    video.srcObject = stream;
-    await video.play().catch(err => console.warn('Kameravideó play figyelmeztetés:', err));
-    this.fallbackVideo = video;
-    this.isFallbackAR = true;
   }
 
   // 📹 Fallback kamera teljes leállítása
