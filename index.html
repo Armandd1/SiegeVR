@@ -24,6 +24,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
+  <!-- 📹 Kamera Fallback Passthrough Videó (Háttérben a 3D grafika mögött) -->
+  <video id="ar-camera-feed" playsinline webkit-playsinline muted autoplay class="hidden"></video>
+
   <!-- 3D Canvas Konténer -->
   <div id="canvas-container"></div>
 
@@ -36,8 +39,10 @@
       <!-- Főoldali Fejléc és Logó -->
       <div class="menu-brand">
         <div class="menu-brand-icon">🏰</div>
-        <h1 class="menu-title">AR Asztali Ostrom</h1>
-        <p class="menu-subtitle">Kiterjesztett Valóságú Várromboló Aréna</p>
+        <div class="menu-brand-text">
+          <h1 class="menu-title">AR Asztali Ostrom</h1>
+          <p class="menu-subtitle">Kiterjesztett Valóságú Várromboló Aréna</p>
+        </div>
       </div>
 
       <!-- HTTPS Figyelmeztetés ha véletlenül nem biztonságos HTTP-n nyitnák meg -->
@@ -51,61 +56,62 @@
 
       <!-- Módválasztó Fejléc -->
       <div class="menu-section-header">
-        <span class="section-badge">JÁTÉKMÓDOK</span>
+        <span class="section-badge">3 JÁTÉKMÓD</span>
         <h2 class="section-title">Válassz vezérlést az indításhoz:</h2>
       </div>
 
-      <!-- Két Választható Játékmód Kártya -->
+      <!-- Három Kompakt Választható Játékmód Kártya -->
       <div class="menu-mode-grid">
-        <!-- 1. Mód: Térbeli Telefonmozgás (6DoF) -->
-        <div class="menu-mode-card card-purple" id="btn-start-phone" role="button" tabindex="0">
+        <!-- 1. Mód: Képernyő Érintés (Touch Drag) -->
+        <div class="menu-mode-card card-amber" id="btn-start-touch" role="button" tabindex="0">
           <div class="menu-mode-glow"></div>
-          <div class="menu-mode-top">
-            <span class="menu-mode-icon">📱</span>
-            <div class="menu-mode-headings">
-              <span class="menu-mode-badge badge-purple">Valódi Fizikai Élmény</span>
-              <h3 class="menu-mode-title">Telefonmozgás (6DoF)</h3>
+          <span class="menu-mode-icon">👆</span>
+          <div class="menu-mode-content">
+            <div class="menu-mode-header-line">
+              <h3 class="menu-mode-title">Képernyő Érintés</h3>
+              <span class="menu-mode-badge badge-amber">Klasszikus</span>
             </div>
+            <p class="menu-mode-desc">Ujjhúzás a kijelzőn a célzáshoz és lövéshez</p>
           </div>
-          <p class="menu-mode-desc">Tartsd nyomva a HÚZÁS gombot a telefonon, lépj hátra a szobában a csúzli megfeszítéséhez, majd engedd el a kilövéshez!</p>
-          <div class="btn-mode-launch btn-launch-purple">
-            <span>Indítás Telefonnal</span>
-            <span class="launch-arrow">▶</span>
-          </div>
+          <span class="menu-mode-chevron">▶</span>
         </div>
 
-        <!-- 2. Mód: Kézkövetés & Csippentés (Air Pinch) -->
+        <!-- 2. Mód: Térbeli Telefonmozgás (6DoF) -->
+        <div class="menu-mode-card card-purple" id="btn-start-phone" role="button" tabindex="0">
+          <div class="menu-mode-glow"></div>
+          <span class="menu-mode-icon">📱</span>
+          <div class="menu-mode-content">
+            <div class="menu-mode-header-line">
+              <h3 class="menu-mode-title">Telefonmozgás</h3>
+              <span class="menu-mode-badge badge-purple">6DoF Térbeli</span>
+            </div>
+            <p class="menu-mode-desc">Hátralépés a telefonnal a feszítéshez és kilövéshez</p>
+          </div>
+          <span class="menu-mode-chevron">▶</span>
+        </div>
+
+        <!-- 3. Mód: Kézkövetés & Csippentés (Air Pinch) -->
         <div class="menu-mode-card card-cyan" id="btn-start-hand" role="button" tabindex="0">
           <div class="menu-mode-glow"></div>
-          <div class="menu-mode-top">
-            <span class="menu-mode-icon">🖐️</span>
-            <div class="menu-mode-headings">
-              <span class="menu-mode-badge badge-cyan">Érintésmentes AI</span>
-              <h3 class="menu-mode-title">Kézkövetés (Air Pinch)</h3>
+          <span class="menu-mode-icon">🖐️</span>
+          <div class="menu-mode-content">
+            <div class="menu-mode-header-line">
+              <h3 class="menu-mode-title">Kézkövetés</h3>
+              <span class="menu-mode-badge badge-cyan">Air Pinch AI</span>
             </div>
+            <p class="menu-mode-desc">Érintésmentes csippentés a levegőben kézzel</p>
           </div>
-          <p class="menu-mode-desc">Érintsd össze a mutató- és hüvelykujjad a levegőben a golyó megfogásához, húzd hátra a kezed, majd nyisd szét a kilövéshez!</p>
-          <div class="btn-mode-launch btn-launch-cyan">
-            <span>Indítás Kézkövetéssel</span>
-            <span class="launch-arrow">▶</span>
-          </div>
+          <span class="menu-mode-chevron">▶</span>
         </div>
       </div>
 
-      <!-- Rövid 3 lépéses folyamat-útmutató a főoldalon -->
-      <div class="menu-quick-guide">
-        <div class="guide-item">
-          <span class="guide-num">1</span>
-          <span>Pásztázd az asztalt & rakd le a várat</span>
-        </div>
-        <div class="guide-item">
-          <span class="guide-num">2</span>
-          <span>Helyezd le a csúzlit</span>
-        </div>
-        <div class="guide-item">
-          <span class="guide-num">3</span>
-          <span>Célozz és dönts le minden falat!</span>
-        </div>
+      <!-- Kompakt 1-soros folyamat-útmutató -->
+      <div class="menu-quick-steps">
+        <span class="qstep"><span>1</span> Pásztázás</span>
+        <span class="qarrow">→</span>
+        <span class="qstep"><span>2</span> Lerakás</span>
+        <span class="qarrow">→</span>
+        <span class="qstep"><span>3</span> Ostrom</span>
       </div>
 
       <!-- Rekord pontszám sáv -->

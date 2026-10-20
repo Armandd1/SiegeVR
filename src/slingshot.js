@@ -400,10 +400,6 @@ export class Slingshot {
     bandMesh.quaternion.setFromUnitVectors(_Y_UP, dir.divideScalar(length));
   }
 
-  setControlMode(mode) {
-    this.controlMode = mode;
-  }
-
   // ---------------------------------------------------------------------------
   // EGYSÉGES CÉLZÁSI API – a telefonmozgás és a kézkövetés is ezt hívja
   // ---------------------------------------------------------------------------

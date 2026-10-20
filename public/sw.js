@@ -1,5 +1,5 @@
-// AR Asztali Ostrom - PWA Service Worker (V1)
-const CACHE_NAME = 'ar-ostrom-v1';
+// AR Asztali Ostrom - PWA Service Worker (V3)
+const CACHE_NAME = 'ar-ostrom-v3';
 
 const STATIC_ASSETS = [
   '/',
@@ -37,55 +37,33 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Lekérések kiszolgálása: Stale-While-Revalidate stratégia
+// Lekérések kiszolgálása: Network-First stratégia (mindig a legfrissebb kód fut le, offline fallback-kel)
 self.addEventListener('fetch', (event) => {
   const req = event.request;
 
-  // Csak GET kéréseket gyorsítótárazunk, és kihagyjuk a chrome-extension és egyéb sémákat
+  // Csak GET kéréseket gyorsítótárazunk, és kihagyjuk a nem-http(s) sémákat
   if (req.method !== 'GET' || !req.url.startsWith('http')) {
     return;
   }
 
-  // Navigációs (HTML) kérések: Network-first -> Cache fallback az azonnali frissülésekért
-  if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req)
-        .then((networkRes) => {
+  // Network-First: Elsődlegesen a friss hálózati választ kérjük el
+  event.respondWith(
+    fetch(req)
+      .then((networkRes) => {
+        if (networkRes && networkRes.status === 200 && networkRes.type === 'basic') {
           const resClone = networkRes.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
-          return networkRes;
-        })
-        .catch(() => {
-          return caches.match('/') || caches.match('/index.html');
-        })
-    );
-    return;
-  }
-
-  // Statikus fájlok, képek, betűtípusok: Cache-first -> Network frissítés a háttérben
-  event.respondWith(
-    caches.match(req).then((cachedRes) => {
-      if (cachedRes) {
-        // Háttérben lekérjük az esetleges friss verziót
-        fetch(req).then((networkRes) => {
-          if (networkRes && networkRes.status === 200) {
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, networkRes));
-          }
-        }).catch(() => {});
-        return cachedRes;
-      }
-
-      return fetch(req).then((networkRes) => {
-        if (!networkRes || networkRes.status !== 200 || networkRes.type !== 'basic') {
-          return networkRes;
         }
-        const resClone = networkRes.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
         return networkRes;
-      }).catch((err) => {
-        // Hálózati hiba esetén üres válasz vagy offline fallback
-        return cachedRes;
-      });
-    })
+      })
+      .catch(() => {
+        // Hálózati hiba vagy offline állapot esetén a gyorsítótárból szolgáljuk ki
+        return caches.match(req).then((cachedRes) => {
+          if (cachedRes) return cachedRes;
+          if (req.mode === 'navigate') {
+            return caches.match('/') || caches.match('/index.html');
+          }
+        });
+      })
   );
 });

@@ -20,6 +20,7 @@ class WebXRApp {
     // 🏠 Főoldal / Főmenü Elemek
     this.mainMenu = document.getElementById('main-menu');
     this.uiOverlay = document.getElementById('ui-overlay');
+    this.btnStartTouch = document.getElementById('btn-start-touch');
     this.btnStartPhone = document.getElementById('btn-start-phone');
     this.btnStartHand = document.getElementById('btn-start-hand');
     this.menuHighscoreVal = document.getElementById('menu-highscore-val');
@@ -27,7 +28,7 @@ class WebXRApp {
 
     // Játékállapot és vezérlés
     this.isInGame = false;
-    this.controlMode = 'PHONE_MOTION'; // 'PHONE_MOTION' | 'HAND_TRACKING'
+    this.controlMode = 'TOUCH'; // 'TOUCH' | 'PHONE_MOTION' | 'HAND_TRACKING'
     this.btnPhonePull = document.getElementById('btn-phone-pull');
     this.phoneMotionContainer = document.getElementById('phone-motion-container');
     this.handWebcam = document.getElementById('hand-webcam');
@@ -97,6 +98,7 @@ class WebXRApp {
 
     // 2. WebGLRenderer WebXR támogatással és árnyékokkal (1.75 DPR cap a lag kizárására)
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.renderer.setClearColor(0x000000, 0); // Teljesen átlátszó WebGL háttér a valós kamera passthrough-hoz!
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.xr.enabled = true;
@@ -236,11 +238,19 @@ class WebXRApp {
     this.slingshot.setControlMode(mode);
     this.isInGame = true;
 
-    // Főoldal elrejtése, játék HUD megjelenítése
+    // Főoldal elrejtése, játék HUD megjelenítése és transzparens kamera háttér aktiválása
+    document.body.classList.add('in-game');
+    document.documentElement.classList.add('in-game');
     if (this.mainMenu) this.mainMenu.classList.add('hidden');
     if (this.uiOverlay) this.uiOverlay.classList.remove('hidden');
 
-    if (mode === 'PHONE_MOTION') {
+    if (mode === 'TOUCH') {
+      if (this.renderer) this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+      if (this.phoneMotionContainer) this.phoneMotionContainer.classList.add('hidden');
+      if (this.handStatusBadge) this.handStatusBadge.classList.add('hidden');
+      this.handTracker.stop();
+      this.setHint('👆', 'Érintés mód: Húzd hátra a golyót közvetlenül a kijelzőn a célzáshoz!');
+    } else if (mode === 'PHONE_MOTION') {
       if (this.renderer) this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
       if (this.phoneMotionContainer) this.phoneMotionContainer.classList.remove('hidden');
       if (this.handStatusBadge) this.handStatusBadge.classList.add('hidden');
@@ -261,6 +271,8 @@ class WebXRApp {
   returnToMainMenu() {
     this.isInGame = false;
     this.releaseWakeLock();
+    document.body.classList.remove('in-game', 'xr-active');
+    document.documentElement.classList.remove('in-game', 'xr-active');
 
     // 1. WebXR munkamenet leállítása
     if (this.renderer && this.renderer.xr && this.renderer.xr.isPresenting) {
@@ -396,13 +408,17 @@ class WebXRApp {
       video = document.createElement('video');
       video.id = 'ar-camera-feed';
       video.setAttribute('playsinline', '');
-      video.setAttribute('autoplay', '');
+      video.setAttribute('webkit-playsinline', '');
+      video.playsInline = true;
       video.muted = true;
+      video.setAttribute('muted', '');
+      video.autoplay = true;
       document.body.prepend(video);
     }
 
+    video.classList.remove('hidden');
     video.srcObject = stream;
-    await video.play();
+    await video.play().catch(err => console.warn('Kameravideó play figyelmeztetés:', err));
     this.fallbackVideo = video;
     this.isFallbackAR = true;
   }
@@ -420,7 +436,7 @@ class WebXRApp {
       try {
         this.fallbackVideo.pause();
         this.fallbackVideo.srcObject = null;
-        this.fallbackVideo.remove();
+        this.fallbackVideo.classList.add('hidden');
       } catch (e) {}
       this.fallbackVideo = null;
     }
@@ -548,7 +564,12 @@ class WebXRApp {
     const btnCycle = document.getElementById('btn-cycle-castle');
     const btnReposition = document.getElementById('btn-reposition');
 
-    // 🏠 Főoldali Indító Gombok (Telefon & Kéz)
+    // 🏠 Főoldali Indító Gombok (Érintés, Telefon & Kéz)
+    this.btnStartTouch?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.launchGame('TOUCH');
+    });
+
     this.btnStartPhone?.addEventListener('click', (e) => {
       e.preventDefault();
       this.launchGame('PHONE_MOTION');
