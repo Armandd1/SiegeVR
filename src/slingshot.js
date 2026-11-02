@@ -2,14 +2,14 @@ import * as THREE from 'three';
 import { Vec3 } from 'cannon-es';
 import { PHYSICS_DT, GRAVITY, PROJECTILE_DAMPING } from './physics.js';
 
-// Egységes húzási határok – kompakt asztali méretre optimalizálva
+// Egységes húzási határok – megnövelt, kevésbé érzékeny húzás mélyebb lőívvel
 export const PULL_LIMITS = {
-  minZ: 0.002,
-  maxZ: 0.11,
-  maxX: 0.075,
-  maxY: 0.05,
-  fireZ: 0.003,      // finom, kis húzás esetén is kilövi a golyót
-  fullPowerZ: 0.10   // 100%-os erő
+  minZ: 0.005,
+  maxZ: 0.20,        // Mély, kielégítő hátrahúzás
+  maxX: 0.10,
+  maxY: 0.08,
+  fireZ: 0.016,      // Nem túl érzékeny: nem lő el véletlen mikro-érintésre
+  fullPowerZ: 0.18   // 100%-os erő mély hátrahúzásra
 };
 
 const MAX_PROJECTILES = 10;
@@ -27,6 +27,8 @@ const _segBox = new THREE.Box3();
 const _hitPoint = new THREE.Vector3();
 const _hitNormal = new THREE.Vector3();
 const _camPos = new THREE.Vector3();
+const _launchStart = new THREE.Vector3();
+const _impactPoint = new THREE.Vector3();
 const _Z_NEG = new THREE.Vector3(0, 0, -1);
 const _Z_POS = new THREE.Vector3(0, 0, 1);
 const _Y_UP = new THREE.Vector3(0, 1, 0);
@@ -64,13 +66,13 @@ export class Slingshot {
     this.reloadT = 1;
     this.time = 0;
 
-    // Kompakt asztali méretek (arányosítva az asztalhoz: kb. 9.5 cm magas csúzli)
-    this.stemHeight = 0.075;
-    this.forkWidth = 0.060;
-    this.forkHeight = 0.046;
+    // Megnövelt, masszívabb méretek a nagyobb várhoz igazítva (kb. 12 cm magas csúzli)
+    this.stemHeight = 0.092;
+    this.forkWidth = 0.074;
+    this.forkHeight = 0.054;
     this.restLocalPos = new THREE.Vector3(0, this.stemHeight + this.forkHeight * 0.45, 0);
 
-    this.radius = 0.016; // 3.2 cm átmérőjű kompakt ostromlövedék
+    this.radius = 0.022; // 4.4 cm átmérőjű ostromlövedék
     this.sphereGeo = new THREE.SphereGeometry(this.radius, 18, 18);
 
     // Izzó meteor / tüzes ágyúgolyó anyag
@@ -89,7 +91,7 @@ export class Slingshot {
     this.group.add(this.aimBall);
 
     // Bőr lövedéktartó fészek a golyó mögött
-    const pouchGeo = new THREE.BoxGeometry(0.028, 0.020, 0.008);
+    const pouchGeo = new THREE.BoxGeometry(0.034, 0.024, 0.010);
     const pouchMat = new THREE.MeshStandardMaterial({ color: 0x3d2314, roughness: 0.9 });
     this.pouch = new THREE.Mesh(pouchGeo, pouchMat);
     this.pouch.position.copy(this.restLocalPos);
@@ -202,21 +204,21 @@ export class Slingshot {
     const ghostMat = this.ghostMat;
 
     const baseMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.038, 0.046, 0.010, 20),
+      new THREE.CylinderGeometry(0.046, 0.056, 0.012, 20),
       ghostMat
     );
-    baseMesh.position.set(0, 0.005, 0);
+    baseMesh.position.set(0, 0.006, 0);
     this.ghostGroup.add(baseMesh);
 
     const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.007, 0.010, this.stemHeight, 14),
+      new THREE.CylinderGeometry(0.008, 0.012, this.stemHeight, 14),
       ghostMat
     );
-    stem.position.set(0, this.stemHeight / 2 + 0.005, 0);
+    stem.position.set(0, this.stemHeight / 2 + 0.006, 0);
     this.ghostGroup.add(stem);
 
-    const forkGeo = new THREE.CylinderGeometry(0.005, 0.007, this.forkHeight, 12);
-    const forkY = this.stemHeight + 0.005;
+    const forkGeo = new THREE.CylinderGeometry(0.006, 0.0085, this.forkHeight, 12);
+    const forkY = this.stemHeight + 0.006;
 
     const forkL = new THREE.Mesh(forkGeo, ghostMat);
     forkL.position.set(-this.forkWidth / 3.4, forkY + this.forkHeight * 0.46, 0);
@@ -296,29 +298,29 @@ export class Slingshot {
 
     // 1. Stabil kör alakú fa talapzat, ami szilárdan ráfekszik az asztalra
     const baseMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.038, 0.046, 0.010, 20),
+      new THREE.CylinderGeometry(0.046, 0.056, 0.012, 20),
       woodMat
     );
-    baseMesh.position.set(0, 0.005, 0);
+    baseMesh.position.set(0, 0.006, 0);
     baseMesh.receiveShadow = true;
     baseMesh.castShadow = true;
     this.modelGroup.add(baseMesh);
 
     // 2. Fő törzs / fogantyú
     const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.007, 0.010, this.stemHeight, 14),
+      new THREE.CylinderGeometry(0.008, 0.012, this.stemHeight, 14),
       woodMat
     );
-    stem.position.set(0, this.stemHeight / 2 + 0.005, 0);
+    stem.position.set(0, this.stemHeight / 2 + 0.006, 0);
     stem.castShadow = true;
     this.modelGroup.add(stem);
 
     // 3. Két villa ág
-    const forkY = this.stemHeight + 0.005;
+    const forkY = this.stemHeight + 0.006;
     this.leftForkTip = new THREE.Vector3(-this.forkWidth / 2, forkY + this.forkHeight, 0);
     this.rightForkTip = new THREE.Vector3(this.forkWidth / 2, forkY + this.forkHeight, 0);
 
-    const forkGeo = new THREE.CylinderGeometry(0.005, 0.007, this.forkHeight, 12);
+    const forkGeo = new THREE.CylinderGeometry(0.006, 0.0085, this.forkHeight, 12);
 
     const forkL = new THREE.Mesh(forkGeo, woodMat);
     forkL.position.set(-this.forkWidth / 3.4, forkY + this.forkHeight * 0.46, 0);
@@ -333,7 +335,7 @@ export class Slingshot {
     this.modelGroup.add(forkR);
 
     // 4. Réz rögzítőgyűrűk a villahegyeken
-    const ringGeo = new THREE.TorusGeometry(0.007, 0.002, 10, 14);
+    const ringGeo = new THREE.TorusGeometry(0.0085, 0.0022, 10, 14);
     const ringL = new THREE.Mesh(ringGeo, brassMat);
     ringL.position.copy(this.leftForkTip);
     ringL.rotation.y = Math.PI / 2;
@@ -615,7 +617,7 @@ export class Slingshot {
     const onPointerMove = (e) => {
       if (!this.isAiming || e.pointerId !== activePointerId) return;
 
-      const scaleRef = Math.min(window.innerWidth, window.innerHeight, 520);
+      const scaleRef = Math.min(window.innerWidth, window.innerHeight, 560);
       const deltaX = e.clientX - startX;
       const deltaY = e.clientY - startY;
 
@@ -623,21 +625,21 @@ export class Slingshot {
       let normX = deltaX / scaleRef;
       let normY = deltaY / scaleRef;
 
-      // Ha felfelé húzza (flick/swipe fel a vár felé), automatikusan átváltjuk pozitív feszítésre
+      // Csökkentett érzékenység: határozott, hosszabb ujjhúzásra van szükség (0.72 helyett 0.30)!
       let effectivePullZ;
       let effectivePullX;
       let effectivePullY;
 
       if (normY >= 0) {
         // Hátrahúzás lefelé
-        effectivePullZ = normY * 0.72;
-        effectivePullX = normX * 0.48;
-        effectivePullY = -normY * 0.28;
+        effectivePullZ = normY * 0.30;
+        effectivePullX = normX * 0.22;
+        effectivePullY = -normY * 0.16;
       } else {
         // Pöccintés előre / felfelé
-        effectivePullZ = -normY * 0.72;
-        effectivePullX = -normX * 0.48;
-        effectivePullY = normY * 0.28;
+        effectivePullZ = -normY * 0.30;
+        effectivePullX = -normX * 0.22;
+        effectivePullY = normY * 0.16;
       }
 
       this.setPull(effectivePullX, effectivePullY, effectivePullZ);
@@ -655,7 +657,8 @@ export class Slingshot {
         if (dragPowerBadge) {
           dragPowerBadge.style.left = `${e.clientX}px`;
           dragPowerBadge.style.top = `${e.clientY}px`;
-          const powerPct = Math.round(Math.min(100, (effectivePullZ / PULL_LIMITS.fullPowerZ) * 100));
+          const pullSpan = Math.max(0.001, PULL_LIMITS.fullPowerZ - PULL_LIMITS.fireZ);
+          const powerPct = Math.round(Math.min(100, Math.max(0, ((effectivePullZ - PULL_LIMITS.fireZ) / pullSpan) * 100)));
           dragPowerBadge.innerText = `${powerPct}% ERŐ`;
         }
       }
@@ -696,15 +699,21 @@ export class Slingshot {
   }
 
   calculateWorldVelocity(pullX, pullY, pullZ, target = new THREE.Vector3()) {
-    // Hooke rugótörvénye: progresszív, természetes sebesség a hátrahúzás arányában
-    const power = Math.min(1.0, pullZ / PULL_LIMITS.fullPowerZ);
-    const forwardSpeed = 2.0 + power * 4.6; // 2.0 m/s - 6.6 m/s (kompakt asztali távolságra hangolva)
-    const upwardSpeed = 0.35 + power * 1.5 - (pullY / PULL_LIMITS.maxY) * 1.0;
-    const sideSpeed = -(pullX / PULL_LIMITS.maxX) * 1.5;
+    // Normalizált feszítési erő 0 és 1 között a fireZ és fullPowerZ között
+    const pullSpan = Math.max(0.001, PULL_LIMITS.fullPowerZ - PULL_LIMITS.fireZ);
+    const rawPower = (pullZ - PULL_LIMITS.fireZ) / pullSpan;
+    const power = THREE.MathUtils.clamp(rawPower, 0.0, 1.0);
+
+    // Minél tovább húzza, annál magasabbra lő ("kelljen tovább húzni, hogy magasabbra lőjjön"):
+    // - Kis húzásnál: közvetlen, laposabb lövés
+    // - Mély hátrahúzásnál: meredek, magas ostrom-ballisztikai ív (upwardSpeed akár 3.5 m/s)!
+    const forwardSpeed = 2.4 + power * 4.8;
+    const upwardSpeed = 0.55 + Math.pow(power, 1.25) * 3.10 - (pullY / PULL_LIMITS.maxY) * 1.20;
+    const sideSpeed = -(pullX / PULL_LIMITS.maxX) * 1.50;
 
     target.set(0, 0, 0);
     target.addScaledVector(this.dirToCastle, forwardSpeed);
-    target.y = upwardSpeed;
+    target.y = Math.max(0.2, upwardSpeed);
     target.addScaledVector(this.dirRight, sideSpeed);
 
     return target;
@@ -768,15 +777,15 @@ export class Slingshot {
       this.removeProjectile(0);
     }
 
-    const worldStart = this.aimBall.getWorldPosition(new THREE.Vector3());
-    const worldVel = this.calculateWorldVelocity(localPull.x, localPull.y, localPull.z);
+    const worldStart = this.aimBall.getWorldPosition(_launchStart);
+    const worldVel = this.calculateWorldVelocity(localPull.x, localPull.y, localPull.z, _vel);
 
     const mesh = new THREE.Mesh(this.sphereGeo, this.projectileMat);
     mesh.castShadow = true;
     mesh.position.copy(worldStart);
     this.scene.add(mesh);
 
-    const body = this.physics.addSphere(mesh, worldStart, this.radius, 0.38);
+    const body = this.physics.addSphere(mesh, worldStart, this.radius, 0.62);
     body.velocity.set(worldVel.x, worldVel.y, worldVel.z);
 
     // FONTOS STABILITÁSI JAVÍTÁS:
@@ -788,25 +797,25 @@ export class Slingshot {
       const other = event.body;
       if (!other || other.isProjectile) return;
 
-      const impactPoint = new THREE.Vector3(body.position.x, body.position.y, body.position.z);
+      const impactPoint = _impactPoint.set(body.position.x, body.position.y, body.position.z);
 
       // Becsapódási hang és részecskék indítása (lövedékenként egyszer)
       if (!impactFxDone) {
         impactFxDone = true;
-        if (this.onImpact) this.onImpact(impactPoint, other.isCastleBlock === true);
+        if (this.onImpact) this.onImpact(impactPoint.clone(), other.isCastleBlock === true);
       }
 
       if (!other.isCastleBlock || castleHit) return;
       castleHit = true;
 
       // Kőtömbök aktiválása
-      this.physics.wakeUpNear(impactPoint, 0.35);
+      this.physics.wakeUpNear(impactPoint, 0.45);
 
       // Kinetikus energia és impulzus átadása a közvetlenül eltalált merevtestnek
       const v = body.velocity;
       const speed = Math.hypot(v.x, v.y, v.z);
       if (speed > 0.03) {
-        const impulseMagnitude = 0.45 / speed;
+        const impulseMagnitude = 0.85 / Math.max(0.1, speed);
         other.applyImpulse(
           new Vec3(v.x * impulseMagnitude, v.y * impulseMagnitude, v.z * impulseMagnitude),
           new Vec3(impactPoint.x, impactPoint.y, impactPoint.z)

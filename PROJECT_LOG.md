@@ -185,18 +185,43 @@ Egy web-alapú kiterjesztett valóság (WebAR) minijáték fejlesztése, amely a
     - **Normalizált 2D Többujjas Csippentés:** A zajos 3D Euklideszi távolság helyett kézmérethez normalizált 2D távolságmutató mind a mutatóujjra, mind a középső ujjra, hiszterézissel (be: 0.38, ki: 0.52).
     - **AR Hologram Kéz-Célzókereszt:** A kijelzőn valós időben megjelenik a kézközéppontot követő kiber célkereszt (`#hand-reticle`) fokozatos csippentésmérővel, csippentéskor arany színre váltva, haptikus rezgéssel kísérve.
 
+- [x] **21. Fázis:** Katapult & Vár Finomhangolása, Platform Eltávolítása, Terepszkennelés Simítása és Átfogó Optimalizálás:
+  - **Katapult és Csúzli Mechanika Finomhangolása:**
+    - **Csökkentett Érzékenység:** A képernyős ujjhúzás feszítési szorzója 0.72-ről 0.30-ra csökkentve (több mint kétszer kevésbé érzékeny), így a játékosnak határozottan, hosszabban kell elhúznia az ujját a feszítéshez. Megszűnt az ideges, túlérzékeny viselkedés.
+    - **Magasabb Ballisztikai Lőív ("kelljen tovább húzni, hogy magasabbra lőjjön"):** A lövedék függőleges kezdősebessége (`upwardSpeed`) a húzási erővel progresszívan emelkedik (kis húzásnál laposabb, 0.6 m/s, mély hátrahúzásnál akár 3.5 m/s-ra emelkedő magas ostrom-ballisztikai ív). Ezzel a mélyen hátrahúzott lövedékek magasan a falak fölé emelkedve képesek eltalálni a felső tornyokat és bástyafokokat.
+    - **Húzási Tartomány és Küszöb:** `fireZ` 0.016 m-re növelve a véletlen mikro-érintések elleni védelemért; `fullPowerZ` 0.18 m-re és `maxZ` 0.20 m-re növelve a mély feszítéshez.
+    - **Méret és Tömeg:** A csúzli magassága ~12 cm-re, a tüzes ágyúgolyó átmérője 4.4 cm-re (`radius: 0.022`), tömege 0.62 kg-ra növelve.
+  - **Vár Méretnövelése, Szépítése és Platform Eltávolítása:**
+    - **Megnövelt Várelemek:** A kőtömbök mérete (`BLOCK_SIZE`) 5.4×3.2×3.2 cm-ről 8.2×4.8×4.8 cm-re növelve (~1.5x méretnövekedés), így a vár monumentálisabb, szebb és impozánsabb hatást nyújt az asztalon/padlón.
+    - **Teljes Platform (Plinth) Eltávolítása:** A mesterséges kőtalapzat (`plinth`) teljesen törölve a rendszerből. A vár kövei közvetlenül a felismert valós felületen (`originPos.y`) állnak, természetes árnyékolással, szükségtelen alátétdoboz nélkül.
+    - **Szebb Procedurális PBR Textúrák & Építészet:**
+      - 512×512-es középkori kőfal textúra staggered ashlar kötéssel, 3D letört élekkel (beveling), mély kőfugával és részletes domborzati térképpel (bump map).
+      - 256×256-os tölgyfa gerenda textúra kovácsoltvas pántokkal és ezüst szegecsekkel.
+      - 256×256-os királyi zafírkék nemesi bástyafok textúra arany szegéllyel és heraldikai mintával.
+      - Gazdagított 3D várelrendezések mélységi támasztókövekkel, kapu áthidalóval és autentikus bástyafokokkal (crenellations).
+  - **Terepszkennelés Simítása, Folyamatos Állapotkijelzés és Sík-kiemelő Animáció:**
+    - **Akadozásmentesített Szkennelés (Grace Period & Deadzone):** A WebXR hit-test kimaradó képkockái esetén bevezetett 450 ms-os türelmi idő (`isPoseExpired`) megakadályozza, hogy a szkenner és a szellem előnézet ki-be kapcsolva villogjon vagy akadjon. A 2 mm-es deadzone kiszűri az AR szenzorzajt, az adaptív Lerp/Slerp pedig vajpuha lebegést biztosít.
+    - **Látványos 3D Sík-kiemelő & Lock-In Animáció:**
+      - Amikor a szkenner rátalál a síkra, azonnal lefut egy dinamikus kiemelő animáció: egy smaragdzöld 3D holografikus lökéshullám (`lockShockwave`) terül szét az asztalfelületen (0.05m-től ~0.75m-ig terjedve), megvilágítva az asztalt egy bevilágító ráccsal (`lockShimmer`).
+      - A célkereszt és a reticle egy rugalmas ugrással (`elastic bounce`, 1.35x) reteszelődik a helyére, a sarokelemek pedig smaragdzöldre váltva rögzülnek.
+      - Akusztikus és haptikus megerősítésként azonnal felcsendül egy sci-fi csengetés (`playScanPing()`), miközben a HUD viewfinder és a státusztabletta (`scanLockBounce`) zöld glóriával emeli ki a sikeres rögzítést.
+    - **Folyamatos és Egyértelmű Állapotkijelzés ("írja ki amíg kell"):** A szkennelési állapotkijelző pill (`#scanning-overlay`) a vár és a csúzli lehelyezése alatt mindvégig látható marad a képernyőn egyértelmű, dinamikus szöveggel ("📡 Terep pásztázása...", "✨ Felület rögzítve! KOPPINTS...", "🎯 CSÚZLI lehelyezése...", "✨ Pozíció ideális!"). Csak a harc megkezdésekor tűnik el.
+    - **Fallback AR Támogatás:** WebRTC hátlapi kamerás AR módban is azonnali, folyamatos pásztázó célkereszt és valós idejű visszajelzés működik.
+  - **Átfogó Teljesítményoptimalizálás:**
+    - **Zero-Allocation Render Ciklus:** A képkockánkénti `new THREE.Vector3()` allokációk teljesen felszámolva (`_scanPos`, `_tempVecA`, `_tempVecB`, `_tempDir`, `_launchStart`, `_impactPoint`), megszüntetve a GC micro-freeze-eket.
+    - **Fizika & Test-kezelés:** A platform eltávolításával csökkent a merevtestek száma; a sleeping testek azonnal átugrásra kerülnek a szinkronizációban; solver lépések 2 mikrolépésre optimalizálva.
+    - **Árnyéksík:** 2.2×2.2 m-re optimalizált árnyékfogó sík.
+    - **CSS Safe-Wrapping:** A szkennelési státusztabletta szövege rugalmasan tördelődik bármilyen kijelzőszélességen.
+
 ---
 
 ## 5. Elvégzett Tesztek és Verifikáció
-- **3D Render & Fizika:** A Three.js és Cannon-es világ stabil 60 FPS-sel fut, a kompakt méretű vár és csúzli tökéletesen illeszkedik bármilyen asztalra.
-- **PWA ellenőrzés:** `manifest.webmanifest`, `sw.js` és az ikonok elérhetők, a Service Worker regisztráció sikeres.
-- **Touch célzás:** `#touch-aim-surface` és 2D HUD húzásjelző hibátlanul működik mind lefelé, mind felfelé húzásra.
-- **Röppálya kapcsoló:** A főoldali kapcsoló valós időben ki/bekapcsolja a 3D ívet és a `localStorage`-ban megjegyzi az állapotot.
-- **Produkciós build:** `npm run build` hiba nélkül lefutott (13 modul transzformálva, ~660 ms).
-- **Fejlesztői szerver:** Elérhető helyben a `https://localhost:5173/` címen.
+- **Produkciós build:** `npm run build` sikeresen lefutott 403 ms alatt (13 modul transzformálva, 0 hiba).
+- **Fizika & Célzás ellenőrzés:** `calculateWorldVelocity` és `PULL_LIMITS` finomhangolva, mélyebb ujjhúzásra emelkedő lőívvel.
+- **Kódintegritás:** Platformmentes `CastleBuilder`, simított `SurfaceScanner` és zero-allocation ciklusok érvényesítve.
 
 ---
-*Utolsó frissítés: 20. Fázis befejezve – Képernyős érintéses célzás, főoldali röppálya kapcsoló és új generációs AR kézkövetés.*
+*Utolsó frissítés: 21. Fázis befejezve – Katapult és vár mechanika fejlesztése, platform eltávolítása, akadozásmentes terepszkennelés és teljesítményoptimalizálás.*
 
 
 

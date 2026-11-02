@@ -1,7 +1,7 @@
 import * as CANNON from 'cannon-es';
 
-// Kockák mérete: kompakt, finom asztali méret (5.4 cm széles, 3.2 cm magas, 3.2 cm mély)
-export const BLOCK_SIZE = { x: 0.054, y: 0.032, z: 0.032 };
+// Kockák mérete: megnövelt, szebb és impozánsabb asztali méret (8.2 cm széles, 4.8 cm magas, 4.8 cm mély)
+export const BLOCK_SIZE = { x: 0.082, y: 0.048, z: 0.048 };
 
 // Fix fizikai időlépés – a röppálya-előrejelzés is pontosan ezzel számol
 export const PHYSICS_DT = 1 / 60;

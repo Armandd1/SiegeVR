@@ -20,7 +20,9 @@ export class SurfaceScanner {
     this.currentQuat = new THREE.Quaternion();
     this.targetQuat = new THREE.Quaternion();
     this.tempMat4 = new THREE.Matrix4();
+    this.tempVec = new THREE.Vector3();
     this.hasPose = false;
+    this.lastPoseTime = 0;
 
     // Felületi pásztázó hullámok (Sonár gyűrűk, amik kifelé terjednek a felületen)
     this.wavesCount = 3;
@@ -50,6 +52,64 @@ export class SurfaceScanner {
 
     // Precíziós AR Célzókarika (Reticle) forgó skálával és célkereszttel
     this.createReticle();
+
+    // 3D Sík-kiemelő és rögzítési animáció effektek
+    this.lockProgress = 1;
+    this.onLock = null;
+    this.createLockEffects();
+  }
+
+  createLockEffects() {
+    this.lockGroup = new THREE.Group();
+    this.lockGroup.position.y = 0.0025;
+
+    // 1. Kifelé táguló 3D holografikus lökéshullám (Shockwave Ring) a felismert asztalon
+    const shockwaveGeo = new THREE.RingGeometry(0.02, 0.05, 48);
+    shockwaveGeo.rotateX(-Math.PI / 2);
+    this.lockShockwaveMat = new THREE.MeshBasicMaterial({
+      color: 0x22c55e,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    this.lockShockwave = new THREE.Mesh(shockwaveGeo, this.lockShockwaveMat);
+    this.lockGroup.add(this.lockShockwave);
+
+    // 2. Felismert síkot bevilágító holografikus koordináta-tányér (Shimmer Surface Disc)
+    const shimmerGeo = new THREE.CircleGeometry(0.48, 36);
+    shimmerGeo.rotateX(-Math.PI / 2);
+    this.lockShimmerMat = new THREE.MeshBasicMaterial({
+      color: 0x10b981,
+      transparent: true,
+      opacity: 0,
+      wireframe: true,
+      depthWrite: false
+    });
+    this.lockShimmer = new THREE.Mesh(shimmerGeo, this.lockShimmerMat);
+    this.lockGroup.add(this.lockShimmer);
+
+    // 3. Belső ragyogó pulzáló villanó-korong a rögzítés pillanatában
+    const flashGeo = new THREE.CircleGeometry(0.14, 32);
+    flashGeo.rotateX(-Math.PI / 2);
+    this.lockFlashMat = new THREE.MeshBasicMaterial({
+      color: 0x4ade80,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    this.lockFlash = new THREE.Mesh(flashGeo, this.lockFlashMat);
+    this.lockGroup.add(this.lockFlash);
+
+    this.group.add(this.lockGroup);
+  }
+
+  triggerLockAnimation() {
+    this.lockProgress = 0;
+    if (this.onLock) {
+      this.onLock();
+    }
   }
 
   createScanGrid() {
@@ -102,7 +162,8 @@ export class SurfaceScanner {
     this.gridGroup.add(this.laserSweep);
 
     // 4 holografikus sarokrögzítő (terület határolók a pásztázott zóna körül)
-    const bracketMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8 });
+    this.bracketMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8 });
+    const bracketMat = this.bracketMat;
     const bSize = 0.22;
     const bArm = 0.05;
     [-1, 1].forEach(sx => {
@@ -193,19 +254,31 @@ export class SurfaceScanner {
     this.group.visible = false;
   }
 
-  // Célzópozíció beállítása simítással és felületi szög ellenőrzéssel (Float32Array vagy THREE.Matrix4)
+  // Célzópozíció beállítása simítással, zajszűréssel és felületi szög ellenőrzéssel
   setPose(matrix, isValid = true) {
     if (!matrix) return;
     if (matrix instanceof Float32Array || Array.isArray(matrix)) {
       this.tempMat4.fromArray(matrix);
-      this.targetPos.set(matrix[12], matrix[13], matrix[14]);
+      this.tempVec.set(matrix[12], matrix[13], matrix[14]);
     } else if (matrix.isMatrix4) {
       this.tempMat4.copy(matrix);
-      this.targetPos.setFromMatrixPosition(matrix);
+      this.tempVec.setFromMatrixPosition(matrix);
+    }
+
+    // Deadzone zajszűrés: 2 mm alatti mikromozgást elnyomunk a remegés kizárására
+    if (!this.hasPose || this.tempVec.distanceTo(this.targetPos) >= 0.002) {
+      this.targetPos.copy(this.tempVec);
     }
     this.targetQuat.setFromRotationMatrix(this.tempMat4);
+
+    const wasLocked = this.isPlaneValid;
     this.isPlaneValid = isValid;
+    if (!wasLocked && isValid) {
+      this.triggerLockAnimation();
+    }
+
     this.hasPose = true;
+    this.lastPoseTime = performance.now();
 
     if (!this.group.visible) {
       this.currentPos.copy(this.targetPos);
@@ -215,6 +288,11 @@ export class SurfaceScanner {
       this.group.visible = true;
     }
     this.active = true;
+  }
+
+  isPoseExpired(timeoutMs = 450) {
+    if (!this.hasPose) return true;
+    return (performance.now() - this.lastPoseTime) > timeoutMs;
   }
 
   setPositionDirect(pos) {
@@ -227,6 +305,13 @@ export class SurfaceScanner {
     this.group.visible = true;
     this.active = true;
     this.hasPose = true;
+    this.lastPoseTime = performance.now();
+
+    const wasLocked = this.isPlaneValid;
+    this.isPlaneValid = true;
+    if (!wasLocked) {
+      this.triggerLockAnimation();
+    }
   }
 
   update(dt) {
@@ -234,9 +319,10 @@ export class SurfaceScanner {
 
     this.time += dt;
 
-    // 1. Simított lebegés / mozgás (lerp + slerp a kézremegés kizárására)
-    this.currentPos.lerp(this.targetPos, Math.min(1, dt * 14));
-    this.currentQuat.slerp(this.targetQuat, Math.min(1, dt * 14));
+    // 1. Simított lebegés / mozgás (lerp + slerp a kézremegés és AR akadozás ellen)
+    const lerpFactor = Math.min(1, dt * 10);
+    this.currentPos.lerp(this.targetPos, lerpFactor);
+    this.currentQuat.slerp(this.targetQuat, lerpFactor);
 
     this.group.position.copy(this.currentPos);
     this.group.quaternion.copy(this.currentQuat);
@@ -270,15 +356,44 @@ export class SurfaceScanner {
       this.laserMat.opacity = this.isPlaneValid ? 0.65 + 0.25 * Math.sin(this.time * 6) : 0.25;
     }
 
-    // 5. Szín állapot: kék/cián ha stabil és vízszintes, narancs/vörös ha szögeltérés van
-    const colorHex = this.isPlaneValid ? 0x38bdf8 : 0xf97316;
+    // 5. Szín állapot: élénk smaragdzöld (0x22c55e) ha rögzítve van, kék/cián (0x38bdf8) ha pásztáz
+    const colorHex = this.isPlaneValid ? 0x22c55e : 0x38bdf8;
     if (this.innerMat.color.getHex() !== colorHex) {
       this.innerMat.color.setHex(colorHex);
       if (this.laserMat) this.laserMat.color.setHex(colorHex);
+      if (this.bracketMat) this.bracketMat.color.setHex(colorHex);
       // A gyűrűk saját (klónozott) anyagot használnak, ezért egyenként kell átszínezni őket
       for (const ring of this.sonarRings) {
         ring.mesh.material.color.setHex(colorHex);
       }
+    }
+
+    // 6. Sík megtalálásakor lefutó látványos kiemelő animáció (Lock-in highlight)
+    if (this.lockProgress < 1) {
+      this.lockProgress = Math.min(1, this.lockProgress + dt / 0.7);
+      const t = this.lockProgress;
+
+      // Kifelé száguldó holografikus hullám (0.05m -> ~0.75m felületi kiterjedés az asztalon)
+      const shockScale = 1.0 + t * 14.0;
+      this.lockShockwave.scale.set(shockScale, shockScale, shockScale);
+      this.lockShockwaveMat.opacity = Math.pow(1 - t, 1.8) * 0.95;
+
+      // Bevilágító sík rács (finom pulzálás és elhalványulás a felismert asztalon)
+      const shimmerScale = 0.6 + t * 0.55;
+      this.lockShimmer.scale.set(shimmerScale, shimmerScale, shimmerScale);
+      this.lockShimmerMat.opacity = Math.sin(t * Math.PI) * 0.45;
+
+      // Középponti ragyogó villanás
+      this.lockFlashMat.opacity = Math.max(0, (1 - t * 2.2)) * 0.8;
+
+      // Célkereszt rugalmas kiugrása (Elastic bounce)
+      const bounce = 1.0 + Math.sin(t * Math.PI) * 0.35;
+      this.innerRing.scale.set(bounce, bounce, bounce);
+    } else {
+      if (this.lockShockwaveMat.opacity > 0) this.lockShockwaveMat.opacity = 0;
+      if (this.lockShimmerMat.opacity > 0) this.lockShimmerMat.opacity = 0;
+      if (this.lockFlashMat.opacity > 0) this.lockFlashMat.opacity = 0;
+      this.innerRing.scale.set(1, 1, 1);
     }
   }
 
@@ -286,7 +401,8 @@ export class SurfaceScanner {
     return this.group.matrixWorld;
   }
 
-  getPosition() {
+  getPosition(target = null) {
+    if (target) return target.copy(this.currentPos);
     return this.currentPos.clone();
   }
 }
