@@ -29,10 +29,23 @@ export class HandTracker {
     this.pinchMeter = null;
     this.reticleLabel = null;
 
-    // Alacsony késleltetésű (~30-40 FPS) AI mintavételezés
+    // Képernyőméret gyorsítótárazása (elkerülve a szinkron layout reflow-t)
+    this.winW = typeof window !== 'undefined' ? window.innerWidth : 360;
+    this.winH = typeof window !== 'undefined' ? window.innerHeight : 640;
+    this.onResize = () => {
+      this.winW = window.innerWidth || 360;
+      this.winH = window.innerHeight || 640;
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', this.onResize, { passive: true });
+    }
+
+    // Mobil-optimalizált adaptív AI mintavételezés (~20-24 FPS neurális háló, Three.js 60 FPS lerp mellett)
     this.isProcessing = false;
     this.lastCompletionTime = 0;
-    this.minIdleGapMs = 12; // 12ms szünet = sima, akadozásmentes követés
+    this.lastInferenceDuration = 22; // Becsült következtetési idő (ms)
+    this.minIdleGapMs = 32; // ~22 FPS alap üresjárati rés, hogy a gyengébb processzorok se akadjanak
+    this.videoCallbackId = null;
   }
 
   initDOM(videoEl) {
@@ -82,6 +95,11 @@ export class HandTracker {
       this.animFrameId = null;
     }
 
+    if (this.videoCallbackId && this.videoElement && 'cancelVideoFrameCallback' in this.videoElement) {
+      this.videoElement.cancelVideoFrameCallback(this.videoCallbackId);
+      this.videoCallbackId = null;
+    }
+
     if (this.cameraUtils) {
       try {
         this.cameraUtils.stop();
@@ -117,8 +135,8 @@ export class HandTracker {
       this.mediaPipeHands.setOptions({
         maxNumHands: 1,
         modelComplexity: 0,
-        minDetectionConfidence: 0.55,
-        minTrackingConfidence: 0.55
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
       });
 
       this.mediaPipeHands.onResults(this.onMediaPipeResults.bind(this));
@@ -135,15 +153,16 @@ export class HandTracker {
       return;
     }
 
-    // Kamera inicializálása: 480x360 vagy 320x240 felbontás a pontos ujjhegy felismeréshez
+    // Kamera inicializálása: 320x240 @ 24fps - kis memória- és buszterhelés gyenge telefonokon,
+    // miközben a MediaPipe 224x224-es belső tenzorához tökéletesen elegendő felbontás
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && this.videoElement) {
       try {
         this.stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: 'user', // Szelfi kamera a játékos keze felé
-            width: { ideal: 480, max: 640 },
-            height: { ideal: 360, max: 480 },
-            frameRate: { ideal: 30, max: 60 }
+            width: { ideal: 320, max: 480 },
+            height: { ideal: 240, max: 360 },
+            frameRate: { ideal: 24, max: 30 }
           },
           audio: false
         });
@@ -157,19 +176,22 @@ export class HandTracker {
             onFrame: async () => {
               if (!this.isActive || !this.mediaPipeHands || this.isProcessing || this.hasNativeXRHand) return;
               const now = performance.now();
-              if (now - this.lastCompletionTime < this.minIdleGapMs) return;
+              const adaptiveGap = Math.max(this.minIdleGapMs, this.lastInferenceDuration * 1.35);
+              if (now - this.lastCompletionTime < adaptiveGap) return;
 
               this.isProcessing = true;
+              const tStart = performance.now();
               try {
                 await this.mediaPipeHands.send({ image: this.videoElement });
               } catch (e) {
               } finally {
                 this.isProcessing = false;
                 this.lastCompletionTime = performance.now();
+                this.lastInferenceDuration = this.lastCompletionTime - tStart;
               }
             },
-            width: 480,
-            height: 360
+            width: 320,
+            height: 240
           });
           await this.cameraUtils.start();
         }
@@ -182,8 +204,12 @@ export class HandTracker {
       if (!this.isActive) return;
       const now = performance.now();
 
-      if (!this.isProcessing && !this.hasNativeXRHand && (now - this.lastCompletionTime >= this.minIdleGapMs)) {
+      // Adaptív processzorkímélő időzítés: a gyenge telefonok CPU-ját max 40-45%-ban köti le az AI
+      const adaptiveGap = Math.max(this.minIdleGapMs, this.lastInferenceDuration * 1.35);
+
+      if (!this.isProcessing && !this.hasNativeXRHand && (now - this.lastCompletionTime >= adaptiveGap)) {
         this.isProcessing = true;
+        const tStart = performance.now();
         try {
           if (this.videoElement && this.videoElement.readyState >= 2 && this.mediaPipeHands) {
             await this.mediaPipeHands.send({ image: this.videoElement });
@@ -192,12 +218,13 @@ export class HandTracker {
         } finally {
           this.isProcessing = false;
           this.lastCompletionTime = performance.now();
+          this.lastInferenceDuration = this.lastCompletionTime - tStart;
         }
       }
 
       if (this.isActive) {
-        if ('requestVideoFrameCallback' in this.videoElement) {
-          this.videoElement.requestVideoFrameCallback(processFrame);
+        if (this.videoElement && 'requestVideoFrameCallback' in this.videoElement) {
+          this.videoCallbackId = this.videoElement.requestVideoFrameCallback(processFrame);
         } else {
           this.animFrameId = requestAnimationFrame(processFrame);
         }
@@ -251,14 +278,14 @@ export class HandTracker {
     // Csippentési hiszterézis: könnyű elindítani (0.38) és stabilan tartja (0.52)
     const shouldPinch = this.isPinching ? pinchDist < 0.52 : pinchDist < 0.38;
 
-    // Kijelző képernyő-koordináták a holografikus reticle megjelenítéséhez (szelfi tükörkép korrekció)
-    const screenX = (1 - this.smoothedMid.x) * window.innerWidth;
-    const screenY = this.smoothedMid.y * window.innerHeight;
+    // Kijelző képernyő-koordináták a holografikus célzóhoz (gyorsítótárazott ablakmérettel, elkerülve a DOM layout lekérdezést)
+    const screenX = (1 - this.smoothedMid.x) * this.winW;
+    const screenY = this.smoothedMid.y * this.winH;
 
     if (this.handReticle) {
       this.handReticle.classList.remove('hidden');
-      this.handReticle.style.left = `${screenX}px`;
-      this.handReticle.style.top = `${screenY}px`;
+      // GPU Hardveresen gyorsított translate3d (0 DOM layout reflow / újrarajzolás)
+      this.handReticle.style.transform = `translate3d(${screenX}px, ${screenY}px, 0)`;
 
       if (this.pinchMeter) {
         const pinchProgress = Math.max(0, Math.min(1, (0.65 - pinchDist) / 0.32));

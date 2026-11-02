@@ -303,7 +303,8 @@ class WebXRApp {
       this.handTracker.stop();
       this.setHint('📱', 'Telefonmozgás: Tartsd nyomva a HÚZÁS gombot, és lépj hátra a szobában!');
     } else if (mode === 'HAND_TRACKING') {
-      if (this.renderer) this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.4));
+      // Gyenge telefonokon a fragment shader terhelés csökkentése (35%-kal kevesebb pixel, stabil 60 FPS Three.js)
+      if (this.renderer) this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.15));
       if (this.phoneMotionContainer) this.phoneMotionContainer.classList.add('hidden');
       if (this.handOverlay) this.handOverlay.classList.remove('hidden');
       this.handTracker.start();
