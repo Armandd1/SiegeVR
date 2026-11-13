@@ -191,3 +191,4 @@ btnStartCam.addEventListener('click', async () => {
   btnStartCam.innerText = '✅ Kamera aktív (60 FPS)';
   hudText.innerText = '🖐️ Tartsd a kezed a kamera elé!';
 });
+
