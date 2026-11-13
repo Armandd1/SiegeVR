@@ -1,5 +1,5 @@
 // Dedikált Web Worker a MediaPipe Hands LITE (modelComplexity: 0) kézkövetéshez
-// Külön CPU/GPU szálon fut, 0 főszál-terheléssel és felesleges képmásolás nélkül.
+// XNNPACK CPU SIMD delegálással + WebGL framebuffer-újraallokáció védelemmel a 0 GPU-akadásért
 
 if (typeof self !== 'undefined') {
   self.window = self;
@@ -17,12 +17,42 @@ function loadExternalScript(src) {
       return res.text();
     })
     .then((code) => {
-      // Globális indirect eval: ES Module Workerben is működik (importScripts() hiba nélkül)
       (0, eval)(code);
     });
 
   scriptCache.set(src, p);
   return p;
+}
+
+function createGuardedOffscreenCanvas(w, h) {
+  if (typeof OffscreenCanvas === 'undefined') {
+    return { width: w, height: h, style: {}, addEventListener: () => {} };
+  }
+  const canvas = new OffscreenCanvas(w, h);
+  canvas.style = {};
+  canvas.addEventListener = () => {};
+
+  // A MediaPipe hands.js minden képkockán meghívja a canvas.width = w és canvas.height = h
+  // értékadást, ami WebGL-ben minden képkockán újraallokálja a GPU framebuffert!
+  // Ezzel a védelemmel az azonos méretre történő beállítás 0-költségű no-op lesz.
+  try {
+    const wDesc = Object.getOwnPropertyDescriptor(OffscreenCanvas.prototype, 'width');
+    const hDesc = Object.getOwnPropertyDescriptor(OffscreenCanvas.prototype, 'height');
+    if (wDesc?.get && wDesc?.set && hDesc?.get && hDesc?.set) {
+      Object.defineProperty(canvas, 'width', {
+        get() { return wDesc.get.call(this); },
+        set(v) { if (v !== wDesc.get.call(this)) wDesc.set.call(this, v); },
+        configurable: true
+      });
+      Object.defineProperty(canvas, 'height', {
+        get() { return hDesc.get.call(this); },
+        set(v) { if (v !== hDesc.get.call(this)) hDesc.set.call(this, v); },
+        configurable: true
+      });
+    }
+  } catch (e) {}
+
+  return canvas;
 }
 
 if (typeof document === 'undefined') {
@@ -42,13 +72,7 @@ if (typeof document === 'undefined') {
   globalThis.document = {
     createElement: (tagName) => {
       if (tagName === 'canvas') {
-        if (typeof OffscreenCanvas !== 'undefined') {
-          const canvas = new OffscreenCanvas(192, 144);
-          canvas.style = {};
-          canvas.addEventListener = () => {};
-          return canvas;
-        }
-        return { width: 192, height: 144, style: {}, addEventListener: () => {} };
+        return createGuardedOffscreenCanvas(128, 96);
       }
       if (tagName === 'script') {
         return {
@@ -91,17 +115,22 @@ async function initHandsWorker() {
       locateFile: (file) => `${MEDIAPIPE_HANDS_BASE}${file}`
     });
 
-    // Felesleges protobuf és WebGL képrenderelő kimenetek tiltása:
-    // drasztikusan csökkenti a GPU->RAM textúra másolást és a GC terhelést
-    if (hands.h?.h?.listeners?.[0]?.outs) {
-      delete hands.h.h.listeners[0].outs.image;
-      delete hands.h.h.listeners[0].outs.multiHandWorldLandmarks;
-      delete hands.h.h.listeners[0].outs.multiHandedness;
+    // Csak a 2D/2.5D kéz-landmarkokat kérjük el a C++ gráftól (nincs worldLandmarks,
+    // nincs handedness és nincs felesleges GPU->ImageBitmap visszaolvasás)
+    const listener = hands.h?.h?.listeners?.[0];
+    if (listener && listener.outs) {
+      listener.wants = ['multi_hand_landmarks', 'image_transformed'];
+      listener.outs = {
+        multiHandLandmarks: listener.outs.multiHandLandmarks
+      };
     }
 
+    // useCpuInference: true -> A TFLite neurális háló a Worker külön CPU-magján (XNNPACK WASM SIMD)
+    // fut, így 0%-ban terheli a telefon közös GPU-ját, ahol a Three.js 60 FPS-sel renderel!
     hands.setOptions({
       maxNumHands: 1,
-      modelComplexity: 0, // LITE modell (~2.6x gyorsabb mobilon)
+      modelComplexity: 0,
+      useCpuInference: true,
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5
     });
@@ -172,7 +201,6 @@ self.onmessage = async (event) => {
       self.postMessage({ type: 'RESULT', detected: false, duration: performance.now() - currentTStart });
     }
   } finally {
-    // Memóriaszivárgás elkerülése: ImageBitmap azonnali felszabadítása
     if (frame && typeof frame.close === 'function') {
       frame.close();
     }
