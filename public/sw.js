@@ -1,5 +1,5 @@
-// AR Asztali Ostrom - PWA Service Worker (V4)
-const CACHE_NAME = 'ar-ostrom-v4';
+// AR Asztali Ostrom - PWA Service Worker (V5)
+const CACHE_NAME = 'ar-ostrom-v5';
 
 const STATIC_ASSETS = [
   '/',

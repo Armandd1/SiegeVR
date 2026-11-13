@@ -456,6 +456,37 @@ export class Slingshot {
     }
   }
 
+  // Pehelykönnyű 60 FPS LERP frissítés (0 GPU buffer-feltöltés a két AI mintavétel között)
+  setPullFast(pullX, pullY, pullZ) {
+    if (!this.isAiming) return;
+    const x = THREE.MathUtils.clamp(pullX, -PULL_LIMITS.maxX, PULL_LIMITS.maxX);
+    const y = THREE.MathUtils.clamp(pullY, -PULL_LIMITS.maxY, PULL_LIMITS.maxY);
+    const z = THREE.MathUtils.clamp(pullZ, PULL_LIMITS.minZ, PULL_LIMITS.maxZ);
+
+    if (
+      Math.abs(x - this._lastPullX) < 0.0004 &&
+      Math.abs(y - this._lastPullY) < 0.0004 &&
+      Math.abs(z - this._lastPullZ) < 0.0004
+    ) {
+      return;
+    }
+    this._lastPullX = x;
+    this._lastPullY = y;
+    this._lastPullZ = z;
+
+    this.aimBall.position.set(
+      this.restLocalPos.x + x,
+      this.restLocalPos.y + y,
+      this.restLocalPos.z + z
+    );
+    this.update3DBands();
+
+    if (!this.hasPlayedTension && z > 0.012) {
+      this.hasPlayedTension = true;
+      if (this.onTension) this.onTension();
+    }
+  }
+
   // Visszatérési érték: true, ha ténylegesen kilőttük a golyót
   endAim(fire = true) {
     if (!this.isAiming) return false;

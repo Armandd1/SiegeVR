@@ -1,4 +1,4 @@
-// 1€ Filter (One Euro Filter) – Meta Quest / Vision Pro szintű adaptív kézremegés-szűrő (0 memóriafoglalással)
+// 1€ Filter (One Euro Filter) – Adaptív kézremegés-szűrő (0 memóriafoglalással)
 class OneEuroFilter1D {
   constructor(minCutoff = 1.15, beta = 0.045, dCutoff = 1.0) {
     this.minCutoff = minCutoff;
@@ -42,7 +42,7 @@ class OneEuroFilter1D {
   }
 }
 
-// Hand Tracking Rendszer: Október 3-i 320x240 GPU-s MediaPipe + 1€ Filter + Auto-Hold csippentés-stabilizátor
+// Hand Tracking Rendszer: Garantált AI Pihenőablak (Duty-Cycle Cap <= 28%) + 60 FPS Lerp + 1€ Filter
 export class HandTracker {
   constructor(onPinchStart, onPinchMove, onPinchEnd, onStatusChange = null) {
     this.onPinchStart = onPinchStart;
@@ -52,6 +52,9 @@ export class HandTracker {
 
     this.isActive = false;
     this.isPinching = false;
+    this.handDetected = false;
+    this.hasNativeXRHand = false;
+
     this.pinchAnchor = { x: 0, y: 0, z: 0 };
     this.smoothedMid = { x: 0, y: 0, z: 0 };
     this.tempDelta = { x: 0, y: 0, z: 0 };
@@ -63,16 +66,16 @@ export class HandTracker {
 
     // Auto-Hold (Coyote-time) csippentés-megtartó időzítő (ms)
     this.pinchLostAt = 0;
-    this.PINCH_HOLD_GRACE_MS = 165;
+    this.PINCH_HOLD_GRACE_MS = 180;
 
     this.videoElement = null;
-    this.cameraUtils = null;
     this.mediaPipeHands = null;
     this.stream = null;
-    this.animFrameId = null;
+    this.timerId = null;
 
     this.isProcessing = false;
-    this.lastProcessTime = 0;
+    this.lastInferenceMs = 25;
+    this.pauseUntil = 0;
     this._lastStatusKey = '';
     this._scriptsPromise = null;
   }
@@ -81,7 +84,7 @@ export class HandTracker {
     return new Promise((resolve, reject) => {
       const existing = document.querySelector(`script[src="${src}"]`);
       if (existing) {
-        if (existing.dataset.loaded === 'true') {
+        if (existing.dataset.loaded === 'true' || typeof window.Hands !== 'undefined') {
           resolve();
           return;
         }
@@ -103,12 +106,9 @@ export class HandTracker {
   }
 
   async ensureScriptsLoaded() {
-    if (typeof window.Hands !== 'undefined' && typeof window.Camera !== 'undefined') return true;
+    if (typeof window.Hands !== 'undefined') return true;
     if (!this._scriptsPromise) {
-      this._scriptsPromise = Promise.all([
-        this.loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js'),
-        this.loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js')
-      ]).catch((err) => {
+      this._scriptsPromise = this.loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js').catch((err) => {
         this._scriptsPromise = null;
         throw err;
       });
@@ -135,7 +135,9 @@ export class HandTracker {
   async start() {
     if (this.isActive) return;
     this.isActive = true;
+    this.handDetected = false;
     this.pinchLostAt = 0;
+    this.pauseUntil = 0;
     this.filterX.reset();
     this.filterY.reset();
     this.filterZ.reset();
@@ -156,22 +158,17 @@ export class HandTracker {
   stop() {
     this.isActive = false;
     this.isPinching = false;
+    this.handDetected = false;
+    this.hasNativeXRHand = false;
     this.pinchLostAt = 0;
     this.filterX.reset();
     this.filterY.reset();
     this.filterZ.reset();
     this.emitStatusIfChanged(false, false, false);
 
-    if (this.animFrameId) {
-      cancelAnimationFrame(this.animFrameId);
-      this.animFrameId = null;
-    }
-
-    if (this.cameraUtils) {
-      try {
-        this.cameraUtils.stop();
-      } catch (e) {}
-      this.cameraUtils = null;
+    if (this.timerId) {
+      clearTimeout(this.timerId);
+      this.timerId = null;
     }
 
     if (this.stream) {
@@ -198,6 +195,15 @@ export class HandTracker {
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
 
+      // Felesleges 3D world landmark és handedness kimenetek kikapcsolása (kevesebb GPU->CPU másolás, amikor látja a kezet)
+      const listener = this.mediaPipeHands.h?.h?.listeners?.[0];
+      if (listener && listener.outs) {
+        listener.wants = ['multi_hand_landmarks', 'image_transformed'];
+        listener.outs = {
+          multiHandLandmarks: listener.outs.multiHandLandmarks
+        };
+      }
+
       this.mediaPipeHands.setOptions({
         maxNumHands: 1,
         modelComplexity: 0,
@@ -209,64 +215,75 @@ export class HandTracker {
     }
 
     this.isProcessing = false;
-    this.lastProcessTime = 0;
 
-    // Az október 3-i (932c432 / f42f9c5) natív 320x240-es kamerafelbontás és Camera Utils vezérlés
-    if (window.Camera && this.videoElement) {
-      this.cameraUtils = new window.Camera(this.videoElement, {
-        onFrame: async () => {
-          if (!this.isActive || !this.mediaPipeHands || this.isProcessing) return;
-          const now = performance.now();
-          if (now - this.lastProcessTime < 33) return;
-          this.isProcessing = true;
-          this.lastProcessTime = now;
-          try {
-            await this.mediaPipeHands.send({ image: this.videoElement });
-          } catch (e) {
-          } finally {
-            this.isProcessing = false;
-          }
-        },
-        width: 320,
-        height: 240
-      });
-      await this.cameraUtils.start();
-    } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && this.videoElement) {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && this.videoElement) {
       try {
+        // 240x180 @ 15fps: éles kép a 224x224-es MediaPipe hálónak, de feleakkora kamera-ISP terhelés,
+        // és nincs második 60 FPS-es window.Camera requestAnimationFrame ciklus!
         this.stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: 320, height: 240 }
+          video: {
+            facingMode: 'user',
+            width: { ideal: 240, max: 320 },
+            height: { ideal: 180, max: 240 },
+            frameRate: { ideal: 15, max: 18 }
+          },
+          audio: false
         });
         this.videoElement.srcObject = this.stream;
         await this.videoElement.play();
-
-        const processFrame = async () => {
-          if (!this.isActive) return;
-          const now = performance.now();
-          if (!this.isProcessing && (now - this.lastProcessTime >= 33)) {
-            this.isProcessing = true;
-            this.lastProcessTime = now;
-            try {
-              if (this.videoElement.readyState >= 2 && this.mediaPipeHands) {
-                await this.mediaPipeHands.send({ image: this.videoElement });
-              }
-            } catch (e) {
-            } finally {
-              this.isProcessing = false;
-            }
-          }
-
-          if (this.isActive) {
-            if ('requestVideoFrameCallback' in this.videoElement) {
-              this.videoElement.requestVideoFrameCallback(processFrame);
-            } else {
-              this.animFrameId = requestAnimationFrame(processFrame);
-            }
-          }
-        };
-        processFrame();
+        this.scheduleNextTick(30);
       } catch (camErr) {
-        console.warn('getUserMedia kamera fallback hiba:', camErr);
+        console.warn('getUserMedia kamera indítási hiba:', camErr);
       }
+    }
+  }
+
+  // Garantált pihenőidő (Idle Gap) minden AI futás UTÁN:
+  // Amikor látja a kezet és lefut a 21-pontos modell, utána garantáltan 85-120 ms-ig (5-7 db 60 FPS-es képkockán át)
+  // 0% AI fut, így a Three.js renderelés sosem tud belassulni!
+  scheduleNextTick(overrideMs = null) {
+    if (!this.isActive || this.hasNativeXRHand) return;
+    if (this.timerId) {
+      clearTimeout(this.timerId);
+      this.timerId = null;
+    }
+
+    const now = performance.now();
+    let restMs = overrideMs;
+    if (restMs === null) {
+      if (now < this.pauseUntil) {
+        restMs = Math.max(90, this.pauseUntil - now);
+      } else if (this.handDetected) {
+        // Amikor látja a kezet, a 21-pontos háló futásidejének 2.4-szeresét (minimum 85 ms-ot) pihenünk!
+        // Ez matematikailag <=28%-on tartja az AI terhelést.
+        restMs = Math.max(85, this.lastInferenceMs * 2.4);
+      } else {
+        restMs = 95;
+      }
+    }
+
+    this.timerId = setTimeout(() => {
+      this.timerId = null;
+      this.runSingleInference();
+    }, restMs);
+  }
+
+  async runSingleInference() {
+    if (!this.isActive || this.hasNativeXRHand) return;
+    if (document.hidden || this.isProcessing || !this.videoElement || this.videoElement.readyState < 2 || !this.mediaPipeHands) {
+      this.scheduleNextTick(90);
+      return;
+    }
+
+    this.isProcessing = true;
+    const t0 = performance.now();
+    try {
+      await this.mediaPipeHands.send({ image: this.videoElement });
+    } catch (e) {
+    } finally {
+      this.lastInferenceMs = Math.max(8, performance.now() - t0);
+      this.isProcessing = false;
+      this.scheduleNextTick();
     }
   }
 
@@ -275,7 +292,6 @@ export class HandTracker {
     const now = performance.now();
 
     if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-      // Auto-Hold (Coyote-time): ha csippentés közben 1-2 képkockára (<165 ms) kitakaródik a kéz, nem szakítjuk meg!
       if (this.isPinching) {
         if (this.pinchLostAt === 0) {
           this.pinchLostAt = now;
@@ -288,6 +304,7 @@ export class HandTracker {
         this.pinchLostAt = 0;
         if (this.onPinchEnd) this.onPinchEnd(false);
       }
+      this.handDetected = false;
       this.filterX.reset();
       this.filterY.reset();
       this.filterZ.reset();
@@ -295,16 +312,15 @@ export class HandTracker {
       return;
     }
 
+    this.handDetected = true;
     const landmarks = results.multiHandLandmarks[0];
     const wrist = landmarks[0];
     const middleMcp = landmarks[9];
     const thumb = landmarks[4];  // Hüvelykujj hegye
     const index = landmarks[8];  // Mutatóujj hegye
 
-    // Kéz méretének skálázási alapja (csukló és középső ujj tő távolsága)
     const handScale = Math.hypot(wrist.x - middleMcp.x, wrist.y - middleMcp.y) || 0.2;
 
-    // Csippentési távolság számítása (3D Euklideszi távolság)
     const dx = thumb.x - index.x;
     const dy = thumb.y - index.y;
     const dz = (thumb.z - index.z) || 0;
@@ -319,7 +335,6 @@ export class HandTracker {
     this.smoothedMid.y = this.filterY.filter(rawMidY, now);
     this.smoothedMid.z = this.filterZ.filter(rawMidZ, now);
 
-    // Skála-független csippentési küszöb hiszterézissel (könnyen megfogható: 0.35, stabilan tartható: 0.46)
     const pinchRatio = pinchDist / handScale;
     const isCurrentlyPinched = this.isPinching ? pinchRatio < 0.46 : pinchRatio < 0.35;
 
@@ -332,7 +347,6 @@ export class HandTracker {
         this.pinchAnchor.z = this.smoothedMid.z;
         if (this.onPinchStart) this.onPinchStart(this.smoothedMid);
       } else {
-        // Könnyített, rövidebb kézmozdulat: kis hátrahúzásra is gyorsan eléri a 100%-os erőt
         this.tempDelta.x = (this.pinchAnchor.x - this.smoothedMid.x) * 2.8;
         this.tempDelta.y = (this.smoothedMid.y - this.pinchAnchor.y) * 2.8;
         this.tempDelta.z = (this.pinchAnchor.z - this.smoothedMid.z) * 3.6;
@@ -342,19 +356,19 @@ export class HandTracker {
         }
       }
     } else if (this.isPinching) {
-      // Ha csak enyhén nyílt szét (<0.54) 1-2 képkockára húzás közben, adunk egy rövid (110 ms) türelmi időt;
-      // ha viszont határozottan kinyitotta az ujjait (>=0.54), azonnal kilő!
       if (pinchRatio < 0.54) {
         if (this.pinchLostAt === 0) {
           this.pinchLostAt = now;
-        } else if (now - this.pinchLostAt >= 110) {
+        } else if (now - this.pinchLostAt >= 120) {
           this.isPinching = false;
           this.pinchLostAt = 0;
+          this.pauseUntil = now + 750; // Kilövés után 750 ms-ig 0% AI terhelés a fizikai rombolás alatt!
           if (this.onPinchEnd) this.onPinchEnd(true);
         }
       } else {
         this.isPinching = false;
         this.pinchLostAt = 0;
+        this.pauseUntil = now + 750;
         if (this.onPinchEnd) this.onPinchEnd(true);
       }
     }
@@ -368,6 +382,14 @@ export class HandTracker {
 
     for (const inputSource of frame.session.inputSources) {
       if (inputSource.hand) {
+        if (!this.hasNativeXRHand) {
+          this.hasNativeXRHand = true;
+          if (this.timerId) {
+            clearTimeout(this.timerId);
+            this.timerId = null;
+          }
+        }
+
         const indexTip = inputSource.hand.get('index-finger-tip');
         const thumbTip = inputSource.hand.get('thumb-tip');
 

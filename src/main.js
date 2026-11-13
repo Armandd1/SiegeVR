@@ -202,6 +202,9 @@ class WebXRApp {
     this.handTracker = new HandTracker(
       () => {
         if (!this.isInGame || this.controlMode !== 'HAND_TRACKING') return;
+        this.isHandAiming = true;
+        this.targetHandPull.set(0, 0, 0);
+        this.currentHandPull.set(0, 0, 0);
         this.slingshot.beginAim();
       },
       (delta) => {
@@ -209,10 +212,17 @@ class WebXRApp {
         const pullZ = (delta.z || 0) * 0.56 + (delta.y || 0) * 0.34;
         const pullX = (delta.x || 0) * 0.38;
         const pullY = -(delta.y || 0) * 0.28;
-        this.slingshot.setPull(pullX, pullY, pullZ);
+        this.targetHandPull.set(pullX, pullY, pullZ);
+        // A 3D röppályát csak az AI mintavételek (~9-10 FPS) pillanatában frissítjük
+        this.slingshot.updateTrajectory(
+          THREE.MathUtils.clamp(pullX, -0.10, 0.10),
+          THREE.MathUtils.clamp(pullY, -0.08, 0.08),
+          THREE.MathUtils.clamp(pullZ, 0.004, 0.15)
+        );
       },
       (wasFired) => {
         if (!this.isInGame || this.controlMode !== 'HAND_TRACKING') return;
+        this.isHandAiming = false;
         this.slingshot.endAim(wasFired);
       },
       (status) => {
@@ -486,9 +496,6 @@ class WebXRApp {
       });
 
       this.fallbackCameraStream = stream;
-      if (this.handTracker) {
-        this.handTracker.setExternalStream(stream);
-      }
 
       let video = document.getElementById('ar-camera-feed');
       if (!video) {
@@ -1129,6 +1136,13 @@ class WebXRApp {
       const pullY = deltaCam.y * 0.42;
 
       this.slingshot.setPull(pullX, pullY, pullZ);
+    }
+
+    // 🖐️ Kézkövetés 60 FPS LERP (kizárólag a golyót és a gumiszalagot mozgatja, 0 GPU buffer-allokáció)
+    if (this.controlMode === 'HAND_TRACKING' && this.isHandAiming) {
+      const lerpFactor = Math.min(1, dt * 18);
+      this.currentHandPull.lerp(this.targetHandPull, lerpFactor);
+      this.slingshot.setPullFast(this.currentHandPull.x, this.currentHandPull.y, this.currentHandPull.z);
     }
 
     // Fizikai világ és részecskék léptetése
