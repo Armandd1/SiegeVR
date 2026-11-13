@@ -4,6 +4,7 @@ import { CastleBuilder } from './castle.js';
 import { Slingshot } from './slingshot.js';
 import { ParticleSystem, SoundEffects, SurfaceScanner } from './effects.js';
 import { HandTracker } from './handTracking.js';
+import jsQR from 'jsqr';
 
 class WebXRApp {
   constructor() {
@@ -24,11 +25,17 @@ class WebXRApp {
     this.btnStartPhone = document.getElementById('btn-start-phone');
     this.btnStartHand = document.getElementById('btn-start-hand');
     this.btnStartRemoteHand = document.getElementById('btn-start-remote-hand');
-    this.remoteCodeModal = document.getElementById('remote-code-modal');
+
+    // 📷 Telefonos QR Kód Beolvasó Elemek
+    this.qrScannerModal = document.getElementById('qr-scanner-modal');
+    this.qrScannerVideo = document.getElementById('qr-scanner-video');
+    this.qrScannerCanvas = document.getElementById('qr-scanner-canvas');
+    this.qrScannerStatus = document.getElementById('qr-scanner-status');
+    this.btnCloseScanner = document.getElementById('btn-close-scanner');
+    this.btnConnectManual = document.getElementById('btn-connect-manual');
     this.inputRemoteCode = document.getElementById('input-remote-code');
-    this.btnConnectRemote = document.getElementById('btn-connect-remote');
-    this.btnCancelRemote = document.getElementById('btn-cancel-remote');
-    this.remoteConnStatus = document.getElementById('remote-conn-status');
+    this.qrScannerStream = null;
+    this.qrScanningActive = false;
 
     this.remotePeer = null;
     this.remoteConn = null;
@@ -429,6 +436,7 @@ class WebXRApp {
     this.isPhonePulling = false;
     this.score = 0;
     this.updateScoreDisplay();
+    this.closeQRScanner();
 
     // 5. HUD és vezérlőszervek elrejtése
     if (this.uiOverlay) this.uiOverlay.classList.add('hidden');
@@ -811,31 +819,180 @@ class WebXRApp {
       this.launchGame('HAND_TRACKING');
     });
 
-    // 💻 4. MÓD: Laptop Távoli Kézkövetés párosítás
+    // 💻 4. MÓD: Laptop Távoli Kézkövetés QR Beolvasóval
     this.btnStartRemoteHand?.addEventListener('click', (e) => {
       e.preventDefault();
-      if (this.remoteCodeModal) this.remoteCodeModal.classList.remove('hidden');
-      if (this.inputRemoteCode) {
-        this.inputRemoteCode.value = '';
-        this.inputRemoteCode.focus();
-      }
+      this.openQRScanner();
     });
 
-    this.btnCancelRemote?.addEventListener('click', (e) => {
+    this.btnCloseScanner?.addEventListener('click', (e) => {
       e.preventDefault();
-      if (this.remoteCodeModal) this.remoteCodeModal.classList.add('hidden');
+      this.closeQRScanner();
     });
 
-    this.btnConnectRemote?.addEventListener('click', (e) => {
+    this.btnConnectManual?.addEventListener('click', (e) => {
       e.preventDefault();
       const code = this.inputRemoteCode?.value?.trim();
       if (!code || code.length < 4) {
-        if (this.remoteConnStatus) this.remoteConnStatus.innerText = '⚠️ Kérlek írd be a 4 jegyű kódot!';
+        if (this.qrScannerStatus) this.qrScannerStatus.innerText = '⚠️ Írd be a 4 jegyű kódot!';
         return;
       }
+      this.closeQRScanner();
       this.connectToLaptopController(code);
     });
 
+    this.inputRemoteCode?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.btnConnectManual?.click();
+      }
+    });
+
+  }
+
+  // 📷 Telefonos QR Kód Beolvasó megnyitása a hátlapi kamerával
+  async openQRScanner() {
+    if (this.qrScannerModal) this.qrScannerModal.classList.remove('hidden');
+    if (this.qrScannerStatus) this.qrScannerStatus.innerText = 'Irányítsd a kamerát a laptop képernyőjére!';
+    if (this.inputRemoteCode) this.inputRemoteCode.value = '';
+    const targetBox = document.querySelector('.qr-target-box');
+    if (targetBox) targetBox.classList.remove('success');
+
+    this.qrScanningActive = true;
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (this.qrScannerStatus) this.qrScannerStatus.innerText = '⚠️ A böngésző nem engedi a kamerát. Írd be a kódot!';
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      });
+
+      this.qrScannerStream = stream;
+      if (this.qrScannerVideo) {
+        this.qrScannerVideo.srcObject = stream;
+        await this.qrScannerVideo.play().catch(e => console.warn('QR video play:', e));
+      }
+
+      this.startQRScanLoop();
+    } catch (err) {
+      console.warn('QR kamera megnyitási hiba:', err);
+      if (this.qrScannerStatus) {
+        this.qrScannerStatus.innerText = '⚠️ Kamera nem elérhető. Írd be a 4 jegyű kódot alul!';
+      }
+    }
+  }
+
+  // 📷 QR Kód Beolvasó bezárása és kamera felszabadítása
+  closeQRScanner() {
+    this.qrScanningActive = false;
+    if (this.qrScannerStream) {
+      try {
+        this.qrScannerStream.getTracks().forEach(track => track.stop());
+      } catch (e) {}
+      this.qrScannerStream = null;
+    }
+    if (this.qrScannerVideo) {
+      try {
+        this.qrScannerVideo.pause();
+        this.qrScannerVideo.srcObject = null;
+      } catch (e) {}
+    }
+    if (this.qrScannerModal) {
+      this.qrScannerModal.classList.add('hidden');
+    }
+  }
+
+  // 🔄 Valós idejű QR-kód felismerési hurok (BarcodeDetector + jsQR fallback)
+  startQRScanLoop() {
+    const video = this.qrScannerVideo;
+    const canvas = this.qrScannerCanvas || document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    let barcodeDetector = null;
+    if ('BarcodeDetector' in window) {
+      try {
+        barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch (e) {}
+    }
+
+    const scanFrame = async () => {
+      if (!this.qrScanningActive || !video || video.readyState < 2) {
+        if (this.qrScanningActive) requestAnimationFrame(scanFrame);
+        return;
+      }
+
+      let detectedCode = null;
+
+      // 1. Gyors hardveres natív BarcodeDetector
+      if (barcodeDetector) {
+        try {
+          const results = await barcodeDetector.detect(video);
+          if (results && results.length > 0 && results[0].rawValue) {
+            detectedCode = results[0].rawValue;
+          }
+        } catch (e) {}
+      }
+
+      // 2. jsQR könyvtár fallback
+      if (!detectedCode) {
+        try {
+          const w = 320;
+          const h = 240;
+          canvas.width = w;
+          canvas.height = h;
+          ctx.drawImage(video, 0, 0, w, h);
+          const imageData = ctx.getImageData(0, 0, w, h);
+          const qr = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'dontInvert'
+          });
+          if (qr && qr.data) {
+            detectedCode = qr.data;
+          }
+        } catch (e) {}
+      }
+
+      if (detectedCode) {
+        let code = null;
+        try {
+          const url = new URL(detectedCode);
+          code = url.searchParams.get('remote');
+        } catch (e) {}
+        if (!code) {
+          const match = detectedCode.match(/\b\d{4}\b/);
+          if (match) code = match[0];
+        }
+
+        if (code) {
+          this.qrScanningActive = false;
+          if (navigator.vibrate) navigator.vibrate([40, 50, 40]);
+          if (this.qrScannerStatus) {
+            this.qrScannerStatus.innerHTML = `✅ Beolvasva: <strong style="color:#fbbf24">${code}</strong>! Csatlakozás...`;
+          }
+          const targetBox = document.querySelector('.qr-target-box');
+          if (targetBox) targetBox.classList.add('success');
+
+          setTimeout(() => {
+            this.closeQRScanner();
+            this.connectToLaptopController(code);
+          }, 350);
+          return;
+        }
+      }
+
+      if (this.qrScanningActive) {
+        requestAnimationFrame(scanFrame);
+      }
+    };
+
+    requestAnimationFrame(scanFrame);
   }
 
   // 🔗 Automatikus QR kódos csatlakozás (?remote=XXXX)
@@ -845,12 +1002,7 @@ class WebXRApp {
       const remoteCode = urlParams.get('remote');
       if (remoteCode && remoteCode.length === 4) {
         console.log('Automatikus QR kódos csatlakozás észlelve:', remoteCode);
-        if (this.remoteCodeModal) this.remoteCodeModal.classList.remove('hidden');
-        if (this.inputRemoteCode) this.inputRemoteCode.value = remoteCode;
-        if (this.remoteConnStatus) this.remoteConnStatus.innerText = '⚡ QR kód beolvasva! Csatlakozás a laptophoz...';
-        setTimeout(() => {
-          this.connectToLaptopController(remoteCode);
-        }, 500);
+        this.connectToLaptopController(remoteCode);
       }
     } catch (e) {}
   }
@@ -858,11 +1010,9 @@ class WebXRApp {
   // 💻 P2P WebRTC Csatlakozás a Laptop Kéz Kontrollerhez
   connectToLaptopController(code) {
     if (typeof window.Peer === 'undefined') {
-      if (this.remoteConnStatus) this.remoteConnStatus.innerText = '⏳ Hálózati modul betöltése, próbáld újra pár másodperc múlva...';
+      alert('⏳ Hálózati modul betöltése, próbáld újra pár másodperc múlva!');
       return;
     }
-
-    if (this.remoteConnStatus) this.remoteConnStatus.innerText = `⏳ Csatlakozás a laptophoz (${code})...`;
 
     try {
       if (this.remotePeer) {
@@ -879,12 +1029,8 @@ class WebXRApp {
         conn.on('open', () => {
           console.log('P2P WebRTC kapcsolat létrejött a laptoppal!');
           this.remoteConn = conn;
-          if (this.remoteConnStatus) this.remoteConnStatus.innerText = '✅ Sikeres kapcsolat! Játék indítása...';
-
-          setTimeout(() => {
-            if (this.remoteCodeModal) this.remoteCodeModal.classList.add('hidden');
-            this.launchGame('REMOTE_HAND');
-          }, 400);
+          this.closeQRScanner();
+          this.launchGame('REMOTE_HAND');
         });
 
         conn.on('data', (data) => {
@@ -898,16 +1044,16 @@ class WebXRApp {
 
         conn.on('error', (err) => {
           console.warn('Kapcsolódási hiba a laptoppal:', err);
-          if (this.remoteConnStatus) this.remoteConnStatus.innerText = '❌ Nem található ilyen kódú laptop. Nyitva van a controller.html?';
+          alert('Nem található laptop ezzel a kóddal. Nyitva van a laptopon a kontroller?');
         });
       });
 
       this.remotePeer.on('error', (err) => {
         console.warn('Telefon Peer hiba:', err);
-        if (this.remoteConnStatus) this.remoteConnStatus.innerText = '❌ Hálózati hiba. Ellenőrizd az internetkapcsolatot!';
+        alert('Hálózati hiba a laptophoz csatlakozáskor.');
       });
     } catch (e) {
-      if (this.remoteConnStatus) this.remoteConnStatus.innerText = '❌ Váratlan hiba a csatlakozáskor.';
+      console.error('Váratlan hiba:', e);
     }
   }
 
