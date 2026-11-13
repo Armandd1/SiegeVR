@@ -17,7 +17,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AR Ostrom">
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <!-- MediaPipe Hands & Camera Utils CDN a valós idejű kézkövetéshez -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <!-- PeerJS CDN a Laptop P2P Kontrollerhez -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
   <!-- 📹 Kamera Fallback Passthrough Videó (Háttérben a 3D grafika mögött) -->
@@ -92,10 +96,24 @@
           <span class="menu-mode-icon">🖐️</span>
           <div class="menu-mode-content">
             <div class="menu-mode-header-line">
-              <h3 class="menu-mode-title">Kézkövetés</h3>
-              <span class="menu-mode-badge badge-cyan">Air Pinch AI</span>
+              <h3 class="menu-mode-title">Kézkövetés (Szelfi)</h3>
+              <span class="menu-mode-badge badge-cyan">Mobil AI</span>
             </div>
-            <p class="menu-mode-desc">Érintésmentes csippentés a levegőben kézzel</p>
+            <p class="menu-mode-desc">Érintésmentes csippentés a telefon előlapi kamerájával</p>
+          </div>
+          <span class="menu-mode-chevron">▶</span>
+        </div>
+
+        <!-- 4. ÚJ MÓD: Laptop Távoli Kézkövetés (60 FPS NPU / PC AI) -->
+        <div class="menu-mode-card card-purple" id="btn-start-remote-hand" role="button" tabindex="0" style="border-color: #38bdf8; background: linear-gradient(135deg, rgba(2, 132, 199, 0.25) 0%, rgba(30, 41, 59, 0.85) 100%);">
+          <div class="menu-mode-glow"></div>
+          <span class="menu-mode-icon">💻</span>
+          <div class="menu-mode-content">
+            <div class="menu-mode-header-line">
+              <h3 class="menu-mode-title">Laptop Kéz Kontroller</h3>
+              <span class="menu-mode-badge badge-cyan" style="background:#0284c7; color:#fff;">⚡ 60 FPS Lag-mentes</span>
+            </div>
+            <p class="menu-mode-desc">A laptop webkamerája követi a kezed zéró telefon-terheléssel!</p>
           </div>
           <span class="menu-mode-chevron">▶</span>
         </div>
@@ -129,6 +147,25 @@
       <div class="menu-highscore-bar">
         <span class="highscore-icon">🏆</span>
         <span>Legjobb pontszám: <strong id="menu-highscore-val">0</strong> pont</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💻 PÁROSÍTÁSI MODÁLIS ABLAK A LAPTOP KONTROLLERHEZ -->
+  <div id="remote-code-modal" class="modal-backdrop hidden" style="position:fixed; inset:0; z-index:999; background:rgba(2,6,23,0.92); display:flex; align-items:center; justify-content:center; padding:1rem;">
+    <div style="background:rgba(15,23,42,0.95); border:1px solid rgba(56,189,248,0.4); border-radius:20px; padding:1.5rem; max-width:380px; width:100%; box-shadow:0 10px 40px rgba(0,0,0,0.8); display:flex; flex-direction:column; gap:1rem;">
+      <h3 style="margin:0; color:#38bdf8; font-size:1.15rem; display:flex; align-items:center; gap:0.4rem;">
+        💻 Laptop Kontroller Csatlakozás
+      </h3>
+      <p style="margin:0; font-size:0.8rem; color:#cbd5e1; line-height:1.4;">
+        1. Nyisd meg a laptopod böngészőjében a <strong>/controller.html</strong> oldalt!<br>
+        2. Írd be az ott megjelenő 4 jegyű kódot:
+      </p>
+      <input type="text" id="input-remote-code" maxlength="4" placeholder="1234" style="font-size:1.8rem; font-weight:800; letter-spacing:0.25em; text-align:center; padding:0.6rem; border-radius:12px; border:2px solid #38bdf8; background:#030712; color:#fbbf24; outline:none;">
+      <div id="remote-conn-status" style="font-size:0.75rem; color:#94a3b8; text-align:center;">Várakozás a kódra...</div>
+      <div style="display:flex; gap:0.6rem;">
+        <button id="btn-cancel-remote" style="flex:1; padding:0.65rem; border-radius:9999px; border:1px solid rgba(255,255,255,0.2); background:transparent; color:#fff; font-weight:700; cursor:pointer;">Mégse</button>
+        <button id="btn-connect-remote" style="flex:1; padding:0.65rem; border-radius:9999px; border:none; background:linear-gradient(135deg, #0284c7, #06b6d4); color:#fff; font-weight:700; cursor:pointer;">Csatlakozás</button>
       </div>
     </div>
   </div>

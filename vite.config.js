@@ -7,5 +7,13 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     cors: true
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: './index.html',
+        controller: './controller.html'
+      }
+    }
   }
 });

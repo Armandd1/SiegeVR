@@ -23,6 +23,15 @@ class WebXRApp {
     this.btnStartTouch = document.getElementById('btn-start-touch');
     this.btnStartPhone = document.getElementById('btn-start-phone');
     this.btnStartHand = document.getElementById('btn-start-hand');
+    this.btnStartRemoteHand = document.getElementById('btn-start-remote-hand');
+    this.remoteCodeModal = document.getElementById('remote-code-modal');
+    this.inputRemoteCode = document.getElementById('input-remote-code');
+    this.btnConnectRemote = document.getElementById('btn-connect-remote');
+    this.btnCancelRemote = document.getElementById('btn-cancel-remote');
+    this.remoteConnStatus = document.getElementById('remote-conn-status');
+
+    this.remotePeer = null;
+    this.remoteConn = null;
     this.menuHighscoreVal = document.getElementById('menu-highscore-val');
     this.insecureWarning = document.getElementById('insecure-context-warning');
     this.toggleTrajectory = document.getElementById('toggle-trajectory');
@@ -343,6 +352,14 @@ class WebXRApp {
       if (this.handOverlay) this.handOverlay.classList.add('hidden');
       this.handTracker.stop();
       this.handTracker.ensureScriptsLoaded().catch(() => {});
+    } else if (mode === 'REMOTE_HAND') {
+      // 💻 Laptop Kéz Kontroller mód: 0% telefonos AI és 0 szelfi kamera! Maximális 60 FPS
+      if (this.renderer) this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+      if (this.phoneMotionContainer) this.phoneMotionContainer.classList.add('hidden');
+      if (this.handStatusBadge) this.handStatusBadge.classList.remove('hidden');
+      if (this.handStatusLabel) this.handStatusLabel.innerText = '💻 Laptop kapcsolt';
+      if (this.handOverlay) this.handOverlay.classList.add('hidden');
+      this.handTracker.stop();
     }
 
     // Kamera és AR indítása KÖZVETLENÜL a kattintási felhasználói gesztusból (szinkronban)
@@ -374,6 +391,10 @@ class WebXRApp {
     // 2. Kézkövető kamera és AI leállítása (garantált szelfi kamera kikapcsolás)
     if (this.handTracker) {
       this.handTracker.stop();
+    }
+    if (this.remoteConn) {
+      try { this.remoteConn.close(); } catch (e) {}
+      this.remoteConn = null;
     }
     this.isHandAiming = false;
     if (this.slingshot) this.slingshot.endAim(false);
@@ -786,6 +807,110 @@ class WebXRApp {
       e.preventDefault();
       this.launchGame('HAND_TRACKING');
     });
+
+    // 💻 4. MÓD: Laptop Távoli Kézkövetés párosítás
+    this.btnStartRemoteHand?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (this.remoteCodeModal) this.remoteCodeModal.classList.remove('hidden');
+      if (this.inputRemoteCode) {
+        this.inputRemoteCode.value = '';
+        this.inputRemoteCode.focus();
+      }
+    });
+
+    this.btnCancelRemote?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (this.remoteCodeModal) this.remoteCodeModal.classList.add('hidden');
+    });
+
+    this.btnConnectRemote?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const code = this.inputRemoteCode?.value?.trim();
+      if (!code || code.length < 4) {
+        if (this.remoteConnStatus) this.remoteConnStatus.innerText = '⚠️ Kérlek írd be a 4 jegyű kódot!';
+        return;
+      }
+      this.connectToLaptopController(code);
+    });
+
+  }
+
+  // 💻 P2P WebRTC Csatlakozás a Laptop Kéz Kontrollerhez
+  connectToLaptopController(code) {
+    if (typeof window.Peer === 'undefined') {
+      if (this.remoteConnStatus) this.remoteConnStatus.innerText = '⏳ Hálózati modul betöltése, próbáld újra pár másodperc múlva...';
+      return;
+    }
+
+    if (this.remoteConnStatus) this.remoteConnStatus.innerText = `⏳ Csatlakozás a laptophoz (${code})...`;
+
+    try {
+      if (this.remotePeer) {
+        try { this.remotePeer.destroy(); } catch (e) {}
+      }
+
+      this.remotePeer = new window.Peer({ debug: 1 });
+
+      this.remotePeer.on('open', () => {
+        const targetId = `siege-laptop-${code}`;
+        console.log('Telefon Peer kész, csatlakozás a laptophoz:', targetId);
+        const conn = this.remotePeer.connect(targetId, { reliable: false }); // Unreliable: ultra-alacsony késleltetésű UDP WebRTC csatorna!
+
+        conn.on('open', () => {
+          console.log('P2P WebRTC kapcsolat létrejött a laptoppal!');
+          this.remoteConn = conn;
+          if (this.remoteConnStatus) this.remoteConnStatus.innerText = '✅ Sikeres kapcsolat! Játék indítása...';
+
+          setTimeout(() => {
+            if (this.remoteCodeModal) this.remoteCodeModal.classList.add('hidden');
+            this.launchGame('REMOTE_HAND');
+          }, 400);
+        });
+
+        conn.on('data', (data) => {
+          this.handleRemoteHandData(data);
+        });
+
+        conn.on('close', () => {
+          console.log('Laptop kapcsolat megszakadt');
+          if (this.handStatusLabel) this.handStatusLabel.innerText = '🔴 Laptop lekapcsolódott';
+        });
+
+        conn.on('error', (err) => {
+          console.warn('Kapcsolódási hiba a laptoppal:', err);
+          if (this.remoteConnStatus) this.remoteConnStatus.innerText = '❌ Nem található ilyen kódú laptop. Nyitva van a controller.html?';
+        });
+      });
+
+      this.remotePeer.on('error', (err) => {
+        console.warn('Telefon Peer hiba:', err);
+        if (this.remoteConnStatus) this.remoteConnStatus.innerText = '❌ Hálózati hiba. Ellenőrizd az internetkapcsolatot!';
+      });
+    } catch (e) {
+      if (this.remoteConnStatus) this.remoteConnStatus.innerText = '❌ Váratlan hiba a csatlakozáskor.';
+    }
+  }
+
+  // A laptopról érkező 60 FPS kéz-delta adatok feldolgozása (ZÉRÓ telefonos AI-terhelés!)
+  handleRemoteHandData(data) {
+    if (!this.isInGame || this.controlMode !== 'REMOTE_HAND') return;
+
+    if (data.type === 'PINCH_START') {
+      this.slingshot.beginAim();
+      if (this.handStatusLabel) this.handStatusLabel.innerText = '✊ Csippentve (Laptop)';
+      if (navigator.vibrate) navigator.vibrate(20);
+    } else if (data.type === 'PINCH_MOVE') {
+      const delta = data.delta || {};
+      const pullZ = (delta.z || 0) * 0.45 + (delta.y || 0) * 0.25;
+      const pullX = (delta.x || 0) * 0.35;
+      const pullY = -(delta.y || 0) * 0.25;
+
+      this.slingshot.setPull(pullX, pullY, pullZ);
+    } else if (data.type === 'PINCH_END') {
+      this.slingshot.endAim(data.fire !== false);
+      if (this.handStatusLabel) this.handStatusLabel.innerText = '🖐️ Kéz (Laptop)';
+      if (data.fire && navigator.vibrate) navigator.vibrate(25);
+    }
 
     // ⚙️ Főoldali Röppálya vonalazás ki/bekapcsolása
     this.toggleTrajectory?.addEventListener('change', (e) => {
