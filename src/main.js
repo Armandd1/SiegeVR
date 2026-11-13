@@ -895,6 +895,14 @@ class WebXRApp {
   handleRemoteHandData(data) {
     if (!this.isInGame || this.controlMode !== 'REMOTE_HAND') return;
 
+    // Ping visszaküldése a laptopnak (késleltetés-méréshez)
+    if (data.type === 'PING') {
+      if (this.remoteConn && this.remoteConn.open) {
+        this.remoteConn.send({ type: 'PONG', t: data.t });
+      }
+      return;
+    }
+
     if (data.type === 'PINCH_START') {
       this.slingshot.beginAim();
       if (this.handStatusLabel) this.handStatusLabel.innerText = '✊ Csippentve (Laptop)';
