@@ -1,3 +1,5 @@
+import QRCode from 'qrcode';
+
 // 1€ Filter (One Euro Filter) – Meta Quest szintű adaptív szűrő laptopra
 class OneEuroFilter1D {
   constructor(minCutoff = 1.0, beta = 0.05, dCutoff = 1.0) {
@@ -58,20 +60,23 @@ function generateQrCode() {
   const protocol = window.location.protocol;
   // A telefon közvetlenül megkapja az URL-ben a connect kódot: ?remote=1234
   const targetUrl = `${protocol}//${currentHost}${currentPort}/?remote=${roomCode}`;
+  console.log('Generált telefonos csatlakozási URL:', targetUrl);
 
-  if (window.QRCode && qrCanvas) {
-    window.QRCode.toCanvas(qrCanvas, targetUrl, {
-      width: 140,
+  if (qrCanvas) {
+    QRCode.toCanvas(qrCanvas, targetUrl, {
+      width: 110,
       margin: 1,
       color: {
         dark: '#0f172a',
         light: '#ffffff'
       }
     }, (err) => {
-      if (err) console.warn('QR kód generálási hiba:', err);
+      if (err) {
+        console.error('QR kód generálási hiba:', err);
+      } else {
+        console.log('QR kód sikeresen kirajzolva a canvasre!');
+      }
     });
-  } else {
-    setTimeout(generateQrCode, 200);
   }
 }
 generateQrCode();
