@@ -40,14 +40,21 @@ export class HandTracker {
       window.addEventListener('resize', this.onResize, { passive: true });
     }
 
-    // Mobil-optimalizált adaptív AI mintavételezés (~20-24 FPS neurális háló, Three.js 60 FPS lerp mellett)
+    // Mobil-optimalizált adaptív AI mintavételezés (~10-14 FPS neurális háló, Three.js 60 FPS lerp mellett)
     this.isProcessing = false;
     this.lastCompletionTime = 0;
-    this.lastInferenceDuration = 22; // Becsült következtetési idő (ms)
-    this.minIdleGapMs = 28;
+    this.lastSendTime = 0;
+    this.lastInferenceDuration = 25; // Becsült következtetési idő (ms)
+    this.minIdleGapMs = 68;
     this.pauseUntil = 0;
     this.videoCallbackId = null;
     this._scriptsPromise = null;
+
+    // 192x144 lekicsinyítő előfeldolgozó canvas (33x kisebb adatátvitel a Workerbe)
+    this.captureW = 192;
+    this.captureH = 144;
+    this.captureCanvas = null;
+    this.captureCtx = null;
 
     // Web Worker alapú háttérszálú AI kézkövetés (zéró főszál-terhelés)
     this.worker = null;
@@ -111,6 +118,32 @@ export class HandTracker {
 
   setExternalStream(stream) {
     this.externalStream = stream;
+  }
+
+  async captureDownscaledBitmap() {
+    if (!this.videoElement || this.videoElement.readyState < 2) return null;
+
+    if (!this.captureCanvas) {
+      if (typeof OffscreenCanvas !== 'undefined') {
+        this.captureCanvas = new OffscreenCanvas(this.captureW, this.captureH);
+      } else {
+        this.captureCanvas = document.createElement('canvas');
+        this.captureCanvas.width = this.captureW;
+        this.captureCanvas.height = this.captureH;
+      }
+      this.captureCtx = this.captureCanvas.getContext('2d', { alpha: false, desynchronized: true });
+    }
+
+    if (!this.captureCtx) {
+      return createImageBitmap(this.videoElement);
+    }
+
+    this.captureCtx.drawImage(this.videoElement, 0, 0, this.captureW, this.captureH);
+
+    if (typeof this.captureCanvas.transferToImageBitmap === 'function') {
+      return this.captureCanvas.transferToImageBitmap();
+    }
+    return createImageBitmap(this.captureCanvas);
   }
 
   initWorker() {
@@ -268,9 +301,9 @@ export class HandTracker {
         this.stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: 'user',
-            width: { ideal: 320, max: 480 },
-            height: { ideal: 240, max: 360 },
-            frameRate: { ideal: 24, max: 30 }
+            width: { ideal: 240, max: 320 },
+            height: { ideal: 180, max: 240 },
+            frameRate: { ideal: 20, max: 24 }
           },
           audio: false
         });
@@ -288,6 +321,12 @@ export class HandTracker {
       this.mediaPipeHands = new window.Hands({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
+
+      if (this.mediaPipeHands.h?.h?.listeners?.[0]?.outs) {
+        delete this.mediaPipeHands.h.h.listeners[0].outs.image;
+        delete this.mediaPipeHands.h.h.listeners[0].outs.multiHandWorldLandmarks;
+        delete this.mediaPipeHands.h.h.listeners[0].outs.multiHandedness;
+      }
 
       // modelComplexity: 0 (Lite modell), optimális magabiztosság a stabil és ugrálásmentes követésért
       this.mediaPipeHands.setOptions({
@@ -311,16 +350,16 @@ export class HandTracker {
       return;
     }
 
-    // Kamera inicializálása: 320x240 @ 24fps - kis memória- és buszterhelés gyenge telefonokon,
-    // miközben a MediaPipe 224x224-es belső tenzorához tökéletesen elegendő felbontás
+    // Kamera inicializálása: 240x180 @ 20fps - minimális memória- és buszterhelés gyenge telefonokon,
+    // miközben a MediaPipe Lite tenzorához tökéletesen elegendő felbontás
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && this.videoElement) {
       try {
         this.stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: 'user', // Szelfi kamera a játékos keze felé
-            width: { ideal: 320, max: 480 },
-            height: { ideal: 240, max: 360 },
-            frameRate: { ideal: 24, max: 30 }
+            width: { ideal: 240, max: 320 },
+            height: { ideal: 180, max: 240 },
+            frameRate: { ideal: 20, max: 24 }
           },
           audio: false
         });
@@ -349,8 +388,8 @@ export class HandTracker {
                 this.lastInferenceDuration = this.lastCompletionTime - tStart;
               }
             },
-            width: 320,
-            height: 240
+            width: 240,
+            height: 180
           });
           await this.cameraUtils.start();
         }
@@ -363,10 +402,14 @@ export class HandTracker {
       if (!this.isActive) return;
       const now = performance.now();
 
-      // Adaptív időzítés: Worker módban külön szálon számol, ezért elég kisebb rés is
-      const adaptiveGap = this.useWorker && this.workerReady
-        ? Math.max(20, this.lastInferenceDuration * 0.5)
-        : Math.max(this.minIdleGapMs, this.lastInferenceDuration * 1.35);
+      // Biztonsági timeout: elakadt képkocka esetén ne ragadjon be a feldolgozás
+      if (this.isProcessing && now - this.lastSendTime > 1500) {
+        this.isProcessing = false;
+      }
+
+      // Adaptív időzítés: 10–14 FPS AI követés + 60 FPS főszálú simító interpoláció
+      const baseGap = this.isPinching ? 65 : 95;
+      const adaptiveGap = Math.max(baseGap, this.lastInferenceDuration * 1.35);
 
       if (
         !this.isProcessing &&
@@ -379,10 +422,11 @@ export class HandTracker {
       ) {
         if (this.useWorker && this.workerReady && this.worker) {
           this.isProcessing = true;
+          this.lastSendTime = now;
           try {
-            const bitmap = await createImageBitmap(this.videoElement);
-            if (!this.isActive || !this.worker) {
-              bitmap.close();
+            const bitmap = await this.captureDownscaledBitmap();
+            if (!bitmap || !this.isActive || !this.worker) {
+              if (bitmap && typeof bitmap.close === 'function') bitmap.close();
               this.isProcessing = false;
             } else {
               this.worker.postMessage({ type: 'FRAME', frame: bitmap, timestamp: now }, [bitmap]);
@@ -392,6 +436,7 @@ export class HandTracker {
           }
         } else if (this.mediaPipeHands) {
           this.isProcessing = true;
+          this.lastSendTime = now;
           const tStart = performance.now();
           try {
             await this.mediaPipeHands.send({ image: this.videoElement });

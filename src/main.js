@@ -344,7 +344,10 @@ class WebXRApp {
     document.body.classList.remove('in-game', 'xr-active');
     document.documentElement.classList.remove('in-game', 'xr-active');
 
-    // 1. WebXR munkamenet leállítása
+    // 1. WebXR munkamenet leállítása és pixelarány visszaállítása
+    if (this.renderer) {
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+    }
     if (this.renderer && this.renderer.xr && this.renderer.xr.isPresenting) {
       const session = this.renderer.xr.getSession();
       if (session) {
@@ -469,11 +472,13 @@ class WebXRApp {
     }
 
     try {
+      const isHandMode = this.controlMode === 'HAND_TRACKING';
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          width: { ideal: isHandMode ? 640 : 960 },
+          height: { ideal: isHandMode ? 480 : 540 },
+          frameRate: { ideal: 30, max: 30 }
         },
         audio: false
       });
@@ -707,7 +712,7 @@ class WebXRApp {
     if (this.controlMode === 'TOUCH' && this.touchAimSurface) {
       this.touchAimSurface.classList.remove('hidden');
     } else if (this.controlMode === 'HAND_TRACKING') {
-      if (this.renderer) this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.0));
+      if (this.renderer) this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 0.85));
       if (this.handOverlay) this.handOverlay.classList.remove('hidden');
       this.handTracker.start();
     }
