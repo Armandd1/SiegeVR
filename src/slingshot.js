@@ -413,6 +413,9 @@ export class Slingshot {
     if (this.isAiming || !this.group.visible) return false;
     this.isAiming = true;
     this.hasPlayedTension = false;
+    this._lastPullX = 999;
+    this._lastPullY = 999;
+    this._lastPullZ = 999;
     this.springOffset.set(0, 0, 0);
     this.springVel.set(0, 0, 0);
     this.reloadT = 1;
@@ -427,6 +430,17 @@ export class Slingshot {
     const x = THREE.MathUtils.clamp(pullX, -PULL_LIMITS.maxX, PULL_LIMITS.maxX);
     const y = THREE.MathUtils.clamp(pullY, -PULL_LIMITS.maxY, PULL_LIMITS.maxY);
     const z = THREE.MathUtils.clamp(pullZ, PULL_LIMITS.minZ, PULL_LIMITS.maxZ);
+
+    if (
+      Math.abs(x - this._lastPullX) < 0.0005 &&
+      Math.abs(y - this._lastPullY) < 0.0005 &&
+      Math.abs(z - this._lastPullZ) < 0.0005
+    ) {
+      return;
+    }
+    this._lastPullX = x;
+    this._lastPullY = y;
+    this._lastPullZ = z;
 
     this.aimBall.position.set(
       this.restLocalPos.x + x,

@@ -202,22 +202,17 @@ class WebXRApp {
     this.handTracker = new HandTracker(
       () => {
         if (!this.isInGame || this.controlMode !== 'HAND_TRACKING') return;
-        this.isHandAiming = true;
-        this.targetHandPull.set(0, 0, 0);
-        this.currentHandPull.set(0, 0, 0);
         this.slingshot.beginAim();
-        this.setHint('🖐️', 'Kéz megfogva: Húzd hátra a kezed a levegőben a feszítéshez!');
       },
       (delta) => {
         if (!this.isInGame || this.controlMode !== 'HAND_TRACKING') return;
-        const pullZ = (delta.z || 0) * 0.28 + (delta.y || 0) * 0.16;
-        const pullX = (delta.x || 0) * 0.22;
-        const pullY = -(delta.y || 0) * 0.16;
-        this.targetHandPull.set(pullX, pullY, pullZ);
+        const pullZ = (delta.z || 0) * 0.45 + (delta.y || 0) * 0.25;
+        const pullX = (delta.x || 0) * 0.35;
+        const pullY = -(delta.y || 0) * 0.25;
+        this.slingshot.setPull(pullX, pullY, pullZ);
       },
       (wasFired) => {
         if (!this.isInGame || this.controlMode !== 'HAND_TRACKING') return;
-        this.isHandAiming = false;
         this.slingshot.endAim(wasFired);
       },
       (status) => {
@@ -330,7 +325,6 @@ class WebXRApp {
       this.handTracker.stop();
     } else if (mode === 'HAND_TRACKING') {
       // A szkennelés és lerakás alatt 0% AI fut; csak a Harc (BATTLE) fázisban indul el!
-      // Előmelegítjük a Web Workert a háttérben, hogy a csata indulásakor 0 ms legyen a betöltés.
       if (this.renderer && (!this.renderer.xr || !this.renderer.xr.isPresenting)) {
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
       }
@@ -338,7 +332,7 @@ class WebXRApp {
       if (this.handStatusBadge) this.handStatusBadge.classList.add('hidden');
       if (this.handOverlay) this.handOverlay.classList.add('hidden');
       this.handTracker.stop();
-      this.handTracker.initWorker();
+      this.handTracker.ensureScriptsLoaded().catch(() => {});
     }
 
     // Kamera és AR indítása KÖZVETLENÜL a kattintási felhasználói gesztusból (szinkronban)
@@ -513,9 +507,6 @@ class WebXRApp {
       video.srcObject = stream;
       await video.play().catch(err => console.warn('Kameravideó play figyelmeztetés:', err));
       this.fallbackVideo = video;
-      if (this.handTracker) {
-        this.handTracker.setExternalVideo(video, true);
-      }
       this.isFallbackAR = true;
 
       if (this.arStepper) this.arStepper.classList.remove('hidden');
@@ -543,11 +534,6 @@ class WebXRApp {
         this.fallbackVideo.classList.add('hidden');
       } catch (e) {}
       this.fallbackVideo = null;
-    }
-
-    if (this.handTracker) {
-      this.handTracker.setExternalVideo(null, false);
-      this.handTracker.setExternalStream(null);
     }
 
     this.isFallbackAR = false;
@@ -735,14 +721,6 @@ class WebXRApp {
     if (this.controlMode === 'TOUCH' && this.touchAimSurface) {
       this.touchAimSurface.classList.remove('hidden');
     } else if (this.controlMode === 'HAND_TRACKING') {
-      if (this.renderer) {
-        if (!this.renderer.xr || !this.renderer.xr.isPresenting) {
-          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 0.85));
-        } else if (typeof this.renderer.xr.setFoveation === 'function') {
-          this.renderer.xr.setFoveation(1.0);
-        }
-      }
-      if (this.handOverlay) this.handOverlay.classList.remove('hidden');
       this.handTracker.start();
     }
   }
@@ -1142,11 +1120,6 @@ class WebXRApp {
     this.scanner.update(dt);
     this.slingshot.update(dt);
 
-    // Célzás közben a gumiszalagok/golyó árnyékát frissítjük
-    if (this.slingshot.isAiming || this.slingshot.reloadT < 1) {
-      this.requestShadowUpdate();
-    }
-
     // 📱 Telefonmozgás (Phone Pullback) hátrahúzás szimulációja
     if (this.controlMode === 'PHONE_MOTION' && this.isPhonePulling && this.slingshot.dirToCastle) {
       const deltaCam = this.tempCamDelta.copy(this.camera.position).sub(this.phoneAnchorCamPos);
@@ -1156,16 +1129,6 @@ class WebXRApp {
       const pullY = deltaCam.y * 0.35;
 
       this.slingshot.setPull(pullX, pullY, pullZ);
-    }
-
-    // 🖐️ Kézkövetés finom, akadozásmentes 60 FPS húzás- és célzókereszt-interpoláció (Lerp)
-    if (this.controlMode === 'HAND_TRACKING' && this.stage === 'BATTLE') {
-      this.handTracker.updateVisualReticle(dt);
-      if (this.isHandAiming) {
-        const lerpFactor = Math.min(1, dt * 22);
-        this.currentHandPull.lerp(this.targetHandPull, lerpFactor);
-        this.slingshot.setPull(this.currentHandPull.x, this.currentHandPull.y, this.currentHandPull.z);
-      }
     }
 
     // Fizikai világ és részecskék léptetése
