@@ -45,10 +45,36 @@ const ctx = canvasEl.getContext('2d');
 const hudText = document.getElementById('hud-text');
 const latencyBadge = document.getElementById('latency-badge');
 const tensionBar = document.getElementById('tension-bar');
+const qrCanvas = document.getElementById('qr-canvas');
 
 // 4 jegyű szobakód
 const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
 roomCodeEl.innerText = roomCode;
+
+// QR kód legenerálása közvetlenül a telefonos játék indító URL-jével
+function generateQrCode() {
+  const currentHost = window.location.hostname;
+  const currentPort = window.location.port ? `:${window.location.port}` : '';
+  const protocol = window.location.protocol;
+  // A telefon közvetlenül megkapja az URL-ben a connect kódot: ?remote=1234
+  const targetUrl = `${protocol}//${currentHost}${currentPort}/?remote=${roomCode}`;
+
+  if (window.QRCode && qrCanvas) {
+    window.QRCode.toCanvas(qrCanvas, targetUrl, {
+      width: 140,
+      margin: 1,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff'
+      }
+    }, (err) => {
+      if (err) console.warn('QR kód generálási hiba:', err);
+    });
+  } else {
+    setTimeout(generateQrCode, 200);
+  }
+}
+generateQrCode();
 
 const peerId = `siege-laptop-${roomCode}`;
 let peer = null;

@@ -280,6 +280,9 @@ class WebXRApp {
       this.insecureWarning.classList.remove('hidden');
     }
 
+    // 🔗 Automatikus QR-kódos csatlakozás a Laptop Kontrollerhez (ha az URL-ben van ?remote=XXXX)
+    this.checkAutoRemoteConnect();
+
     // 11. Render loop
     this.lastTime = performance.now();
     this.renderer.setAnimationLoop(this.render.bind(this));
@@ -833,6 +836,23 @@ class WebXRApp {
       this.connectToLaptopController(code);
     });
 
+  }
+
+  // 🔗 Automatikus QR kódos csatlakozás (?remote=XXXX)
+  checkAutoRemoteConnect() {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const remoteCode = urlParams.get('remote');
+      if (remoteCode && remoteCode.length === 4) {
+        console.log('Automatikus QR kódos csatlakozás észlelve:', remoteCode);
+        if (this.remoteCodeModal) this.remoteCodeModal.classList.remove('hidden');
+        if (this.inputRemoteCode) this.inputRemoteCode.value = remoteCode;
+        if (this.remoteConnStatus) this.remoteConnStatus.innerText = '⚡ QR kód beolvasva! Csatlakozás a laptophoz...';
+        setTimeout(() => {
+          this.connectToLaptopController(remoteCode);
+        }, 500);
+      }
+    } catch (e) {}
   }
 
   // 💻 P2P WebRTC Csatlakozás a Laptop Kéz Kontrollerhez

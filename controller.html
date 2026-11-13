@@ -14,6 +14,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   <!-- PeerJS CDN a P2P WebRTC-hez -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- QRCode.js könyvtár a közvetlen QR-kód generáláshoz -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 
   <style>
     body {
@@ -196,15 +198,20 @@
     </div>
 
     <div class="connect-box">
-      <div>
-        <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.3rem;">
-          1. Írd be ezt a kódot a telefonodon a <strong>„Laptop Kéz Kontroller”</strong> menüpontban:
+      <div style="flex: 1; min-width: 200px;">
+        <div style="font-size: 0.95rem; font-weight: 700; color: #f8fafc; margin-bottom: 0.35rem;">
+          📱 Olvasd be a telefonoddal a QR-kódot:
+        </div>
+        <div style="font-size: 0.8rem; color: #94a3b8; line-height: 1.4; margin-bottom: 0.5rem;">
+          Nyisd meg a kamera appot a telefonodon, olvasd be ezt a QR-kódot, és a telefon <strong>azonnal, gépelés nélkül csatlakozik</strong> a laptophoz!
         </div>
         <div style="font-size: 0.78rem; color: #38bdf8;">
-          ⚡ Full 3D csontváz-követés, 1€ Filter, zéró telefonmelegedés és stabil 60 FPS!
+          Vagy írd be kézzel ezt a 4 jegyű kódot: <strong id="room-code" style="color: #fbbf24; font-size: 1.1rem; letter-spacing: 0.1em;">----</strong>
         </div>
       </div>
-      <div id="room-code" class="code-display">----</div>
+      <div style="background: #ffffff; padding: 10px; border-radius: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;">
+        <canvas id="qr-canvas" width="140" height="140"></canvas>
+      </div>
     </div>
 
     <div>
