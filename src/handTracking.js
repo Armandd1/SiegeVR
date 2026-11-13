@@ -1,4 +1,48 @@
-// Hand Tracking Rendszer: az október eleji (932c432 / f42f9c5) gyors, közvetlen 320x240 GPU-s MediaPipe felépítés
+// 1€ Filter (One Euro Filter) – Meta Quest / Vision Pro szintű adaptív kézremegés-szűrő (0 memóriafoglalással)
+class OneEuroFilter1D {
+  constructor(minCutoff = 1.15, beta = 0.045, dCutoff = 1.0) {
+    this.minCutoff = minCutoff;
+    this.beta = beta;
+    this.dCutoff = dCutoff;
+    this.xPrev = null;
+    this.dxPrev = 0;
+    this.tPrev = null;
+  }
+
+  reset() {
+    this.xPrev = null;
+    this.dxPrev = 0;
+    this.tPrev = null;
+  }
+
+  alpha(cutoff, dt) {
+    const tau = 1.0 / (2 * Math.PI * cutoff);
+    return 1.0 / (1.0 + tau / dt);
+  }
+
+  filter(x, tMs) {
+    if (this.tPrev === null || this.xPrev === null) {
+      this.xPrev = x;
+      this.dxPrev = 0;
+      this.tPrev = tMs;
+      return x;
+    }
+
+    const dt = Math.max(0.004, Math.min(0.25, (tMs - this.tPrev) * 0.001));
+    this.tPrev = tMs;
+
+    const dx = (x - this.xPrev) / dt;
+    const edx = this.dxPrev + this.alpha(this.dCutoff, dt) * (dx - this.dxPrev);
+    this.dxPrev = edx;
+
+    const cutoff = this.minCutoff + this.beta * Math.abs(edx);
+    const filtered = this.xPrev + this.alpha(cutoff, dt) * (x - this.xPrev);
+    this.xPrev = filtered;
+    return filtered;
+  }
+}
+
+// Hand Tracking Rendszer: Október 3-i 320x240 GPU-s MediaPipe + 1€ Filter + Auto-Hold csippentés-stabilizátor
 export class HandTracker {
   constructor(onPinchStart, onPinchMove, onPinchEnd, onStatusChange = null) {
     this.onPinchStart = onPinchStart;
@@ -10,6 +54,16 @@ export class HandTracker {
     this.isPinching = false;
     this.pinchAnchor = { x: 0, y: 0, z: 0 };
     this.smoothedMid = { x: 0, y: 0, z: 0 };
+    this.tempDelta = { x: 0, y: 0, z: 0 };
+
+    // 3D 1€ Filter példányok (X, Y, Z tengelyekre)
+    this.filterX = new OneEuroFilter1D(1.15, 0.045, 1.0);
+    this.filterY = new OneEuroFilter1D(1.15, 0.045, 1.0);
+    this.filterZ = new OneEuroFilter1D(1.05, 0.040, 1.0);
+
+    // Auto-Hold (Coyote-time) csippentés-megtartó időzítő (ms)
+    this.pinchLostAt = 0;
+    this.PINCH_HOLD_GRACE_MS = 165;
 
     this.videoElement = null;
     this.cameraUtils = null;
@@ -81,6 +135,10 @@ export class HandTracker {
   async start() {
     if (this.isActive) return;
     this.isActive = true;
+    this.pinchLostAt = 0;
+    this.filterX.reset();
+    this.filterY.reset();
+    this.filterZ.reset();
     this._lastStatusKey = '';
     this.emitStatusIfChanged(true, false, false);
 
@@ -98,6 +156,10 @@ export class HandTracker {
   stop() {
     this.isActive = false;
     this.isPinching = false;
+    this.pinchLostAt = 0;
+    this.filterX.reset();
+    this.filterY.reset();
+    this.filterZ.reset();
     this.emitStatusIfChanged(false, false, false);
 
     if (this.animFrameId) {
@@ -136,12 +198,11 @@ export class HandTracker {
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
 
-      // Az október eleji (f42f9c5) beállítás: modelComplexity: 0 (GPU Lite modell), 0.6 confidence
       this.mediaPipeHands.setOptions({
         maxNumHands: 1,
         modelComplexity: 0,
-        minDetectionConfidence: 0.6,
-        minTrackingConfidence: 0.6
+        minDetectionConfidence: 0.55,
+        minTrackingConfidence: 0.55
       });
 
       this.mediaPipeHands.onResults(this.onMediaPipeResults.bind(this));
@@ -150,13 +211,13 @@ export class HandTracker {
     this.isProcessing = false;
     this.lastProcessTime = 0;
 
-    // Az október 3. / október 12. (932c432 / f42f9c5) natív 320x240-es kamerafelbontása és Camera Utils vezérlése
+    // Az október 3-i (932c432 / f42f9c5) natív 320x240-es kamerafelbontás és Camera Utils vezérlés
     if (window.Camera && this.videoElement) {
       this.cameraUtils = new window.Camera(this.videoElement, {
         onFrame: async () => {
           if (!this.isActive || !this.mediaPipeHands || this.isProcessing) return;
           const now = performance.now();
-          if (now - this.lastProcessTime < 33) return; // Max 30 FPS feldolgozás a CPU/GPU kíméléséhez
+          if (now - this.lastProcessTime < 33) return;
           this.isProcessing = true;
           this.lastProcessTime = now;
           try {
@@ -211,13 +272,26 @@ export class HandTracker {
 
   onMediaPipeResults(results) {
     if (!this.isActive) return;
+    const now = performance.now();
 
     if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-      this.emitStatusIfChanged(true, false, false);
+      // Auto-Hold (Coyote-time): ha csippentés közben 1-2 képkockára (<165 ms) kitakaródik a kéz, nem szakítjuk meg!
       if (this.isPinching) {
+        if (this.pinchLostAt === 0) {
+          this.pinchLostAt = now;
+          return;
+        }
+        if (now - this.pinchLostAt < this.PINCH_HOLD_GRACE_MS) {
+          return;
+        }
         this.isPinching = false;
+        this.pinchLostAt = 0;
         if (this.onPinchEnd) this.onPinchEnd(false);
       }
+      this.filterX.reset();
+      this.filterY.reset();
+      this.filterZ.reset();
+      this.emitStatusIfChanged(true, false, false);
       return;
     }
 
@@ -240,17 +314,17 @@ export class HandTracker {
     const rawMidY = (thumb.y + index.y) * 0.5;
     const rawMidZ = (thumb.z + index.z) * 0.5;
 
-    // Aluláteresztő simítás (EMA) kézremegés ellen
-    const alpha = 0.55;
-    this.smoothedMid.x = this.smoothedMid.x * (1 - alpha) + rawMidX * alpha;
-    this.smoothedMid.y = this.smoothedMid.y * (1 - alpha) + rawMidY * alpha;
-    this.smoothedMid.z = this.smoothedMid.z * (1 - alpha) + rawMidZ * alpha;
+    // 1€ Filter: álló kéznél kiszűri a remegést, mozgó kéznél 0 ms késleltetéssel követ
+    this.smoothedMid.x = this.filterX.filter(rawMidX, now);
+    this.smoothedMid.y = this.filterY.filter(rawMidY, now);
+    this.smoothedMid.z = this.filterZ.filter(rawMidZ, now);
 
-    // Skála-független csippentési küszöb hiszterézissel (be: 0.32 * kézméret, ki: 0.42 * kézméret)
+    // Skála-független csippentési küszöb hiszterézissel (könnyen megfogható: 0.35, stabilan tartható: 0.46)
     const pinchRatio = pinchDist / handScale;
-    const shouldPinch = this.isPinching ? pinchRatio < 0.42 : pinchRatio < 0.32;
+    const isCurrentlyPinched = this.isPinching ? pinchRatio < 0.46 : pinchRatio < 0.35;
 
-    if (shouldPinch) {
+    if (isCurrentlyPinched) {
+      this.pinchLostAt = 0;
       if (!this.isPinching) {
         this.isPinching = true;
         this.pinchAnchor.x = this.smoothedMid.x;
@@ -258,18 +332,31 @@ export class HandTracker {
         this.pinchAnchor.z = this.smoothedMid.z;
         if (this.onPinchStart) this.onPinchStart(this.smoothedMid);
       } else {
-        // Mozgatás az eredeti rögzítési ponthoz képest (invertált X a tükörkép miatt)
-        const deltaX = (this.pinchAnchor.x - this.smoothedMid.x) * 2.2;
-        const deltaY = (this.smoothedMid.y - this.pinchAnchor.y) * 2.2;
-        const deltaZ = (this.pinchAnchor.z - this.smoothedMid.z) * 2.8;
+        // Könnyített, rövidebb kézmozdulat: kis hátrahúzásra is gyorsan eléri a 100%-os erőt
+        this.tempDelta.x = (this.pinchAnchor.x - this.smoothedMid.x) * 2.8;
+        this.tempDelta.y = (this.smoothedMid.y - this.pinchAnchor.y) * 2.8;
+        this.tempDelta.z = (this.pinchAnchor.z - this.smoothedMid.z) * 3.6;
 
         if (this.onPinchMove) {
-          this.onPinchMove({ x: deltaX, y: deltaY, z: deltaZ });
+          this.onPinchMove(this.tempDelta);
         }
       }
     } else if (this.isPinching) {
-      this.isPinching = false;
-      if (this.onPinchEnd) this.onPinchEnd(true);
+      // Ha csak enyhén nyílt szét (<0.54) 1-2 képkockára húzás közben, adunk egy rövid (110 ms) türelmi időt;
+      // ha viszont határozottan kinyitotta az ujjait (>=0.54), azonnal kilő!
+      if (pinchRatio < 0.54) {
+        if (this.pinchLostAt === 0) {
+          this.pinchLostAt = now;
+        } else if (now - this.pinchLostAt >= 110) {
+          this.isPinching = false;
+          this.pinchLostAt = 0;
+          if (this.onPinchEnd) this.onPinchEnd(true);
+        }
+      } else {
+        this.isPinching = false;
+        this.pinchLostAt = 0;
+        if (this.onPinchEnd) this.onPinchEnd(true);
+      }
     }
 
     this.emitStatusIfChanged(true, true, this.isPinching);
@@ -293,24 +380,24 @@ export class HandTracker {
             const p2 = thumbPose.transform.position;
 
             const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y, p1.z - p2.z);
-            const mid = {
-              x: (p1.x + p2.x) / 2,
-              y: (p1.y + p2.y) / 2,
-              z: (p1.z + p2.z) / 2
-            };
+            const midX = (p1.x + p2.x) * 0.5;
+            const midY = (p1.y + p2.y) * 0.5;
+            const midZ = (p1.z + p2.z) * 0.5;
 
-            const XR_PINCH_DIST = 0.038; // 3.8 cm
+            const XR_PINCH_DIST = 0.040;
 
             if (dist < XR_PINCH_DIST) {
               if (!this.isPinching) {
                 this.isPinching = true;
-                this.pinchAnchor = { ...mid };
-                if (this.onPinchStart) this.onPinchStart(mid);
+                this.pinchAnchor.x = midX;
+                this.pinchAnchor.y = midY;
+                this.pinchAnchor.z = midZ;
+                if (this.onPinchStart) this.onPinchStart(this.pinchAnchor);
               } else {
-                const deltaX = (mid.x - this.pinchAnchor.x);
-                const deltaY = (mid.y - this.pinchAnchor.y);
-                const deltaZ = (mid.z - this.pinchAnchor.z);
-                if (this.onPinchMove) this.onPinchMove({ x: deltaX, y: deltaY, z: deltaZ });
+                this.tempDelta.x = (midX - this.pinchAnchor.x) * 1.4;
+                this.tempDelta.y = (midY - this.pinchAnchor.y) * 1.4;
+                this.tempDelta.z = (midZ - this.pinchAnchor.z) * 1.6;
+                if (this.onPinchMove) this.onPinchMove(this.tempDelta);
               }
             } else if (this.isPinching) {
               this.isPinching = false;

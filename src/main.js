@@ -206,9 +206,9 @@ class WebXRApp {
       },
       (delta) => {
         if (!this.isInGame || this.controlMode !== 'HAND_TRACKING') return;
-        const pullZ = (delta.z || 0) * 0.45 + (delta.y || 0) * 0.25;
-        const pullX = (delta.x || 0) * 0.35;
-        const pullY = -(delta.y || 0) * 0.25;
+        const pullZ = (delta.z || 0) * 0.56 + (delta.y || 0) * 0.34;
+        const pullX = (delta.x || 0) * 0.38;
+        const pullY = -(delta.y || 0) * 0.28;
         this.slingshot.setPull(pullX, pullY, pullZ);
       },
       (wasFired) => {
@@ -1124,9 +1124,9 @@ class WebXRApp {
     if (this.controlMode === 'PHONE_MOTION' && this.isPhonePulling && this.slingshot.dirToCastle) {
       const deltaCam = this.tempCamDelta.copy(this.camera.position).sub(this.phoneAnchorCamPos);
 
-      const pullZ = -deltaCam.dot(this.slingshot.dirToCastle) * 0.42;
-      const pullX = deltaCam.dot(this.slingshot.dirRight) * 0.42;
-      const pullY = deltaCam.y * 0.35;
+      const pullZ = -deltaCam.dot(this.slingshot.dirToCastle) * 0.58;
+      const pullX = deltaCam.dot(this.slingshot.dirRight) * 0.50;
+      const pullY = deltaCam.y * 0.42;
 
       this.slingshot.setPull(pullX, pullY, pullZ);
     }

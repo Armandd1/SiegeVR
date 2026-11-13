@@ -2,19 +2,19 @@ import * as THREE from 'three';
 import { Vec3 } from 'cannon-es';
 import { PHYSICS_DT, GRAVITY, PROJECTILE_DAMPING } from './physics.js';
 
-// Egységes húzási határok – megnövelt, kevésbé érzékeny húzás mélyebb lőívvel
+// Egységes húzási határok – könnyed, rövid ujj- és kézhúzással is 100% erő érhető el
 export const PULL_LIMITS = {
-  minZ: 0.005,
-  maxZ: 0.20,        // Mély, kielégítő hátrahúzás
+  minZ: 0.004,
+  maxZ: 0.15,        // Kényelmes, rövid hátrahúzás
   maxX: 0.10,
   maxY: 0.08,
-  fireZ: 0.016,      // Nem túl érzékeny: nem lő el véletlen mikro-érintésre
-  fullPowerZ: 0.18   // 100%-os erő mély hátrahúzásra
+  fireZ: 0.010,      // Finom, reszponzív indítási küszöb
+  fullPowerZ: 0.12   // Rövid húzásra is 100%-os ostromerő
 };
 
 const MAX_PROJECTILES = 10;
 const PROJECTILE_LIFETIME_MS = 6500;
-const TRAJECTORY_POINTS = 50;
+const TRAJECTORY_POINTS = 26;
 
 // Újrafelhasznált ideiglenes vektorok (nincs képkockánkénti allokáció)
 const _v1 = new THREE.Vector3();
@@ -634,21 +634,21 @@ export class Slingshot {
       let normX = deltaX / scaleRef;
       let normY = deltaY / scaleRef;
 
-      // Csökkentett érzékenység: határozott, hosszabb ujjhúzásra van szükség (0.72 helyett 0.30)!
+      // Könnyed, érzékeny ujjhúzás: már rövid (~1.5-2 cm-es) húzásra is 100%-os erő érhető el!
       let effectivePullZ;
       let effectivePullX;
       let effectivePullY;
 
       if (normY >= 0) {
         // Hátrahúzás lefelé
-        effectivePullZ = normY * 0.30;
-        effectivePullX = normX * 0.22;
-        effectivePullY = -normY * 0.16;
+        effectivePullZ = normY * 0.62;
+        effectivePullX = normX * 0.36;
+        effectivePullY = -normY * 0.26;
       } else {
         // Pöccintés előre / felfelé
-        effectivePullZ = -normY * 0.30;
-        effectivePullX = -normX * 0.22;
-        effectivePullY = normY * 0.16;
+        effectivePullZ = -normY * 0.62;
+        effectivePullX = -normX * 0.36;
+        effectivePullY = normY * 0.26;
       }
 
       this.setPull(effectivePullX, effectivePullY, effectivePullZ);
@@ -713,11 +713,9 @@ export class Slingshot {
     const rawPower = (pullZ - PULL_LIMITS.fireZ) / pullSpan;
     const power = THREE.MathUtils.clamp(rawPower, 0.0, 1.0);
 
-    // Minél tovább húzza, annál magasabbra lő ("kelljen tovább húzni, hogy magasabbra lőjjön"):
-    // - Kis húzásnál: közvetlen, laposabb lövés
-    // - Mély hátrahúzásnál: meredek, magas ostrom-ballisztikai ív (upwardSpeed akár 3.5 m/s)!
-    const forwardSpeed = 2.4 + power * 4.8;
-    const upwardSpeed = 0.55 + Math.pow(power, 1.25) * 3.10 - (pullY / PULL_LIMITS.maxY) * 1.20;
+    // Könnyedebb magas ív: már közepes hátrahúzásnál is szép magas ostrom-ballisztikai ívet ad
+    const forwardSpeed = 2.6 + power * 4.7;
+    const upwardSpeed = 0.65 + Math.pow(power, 0.95) * 3.15 - (pullY / PULL_LIMITS.maxY) * 1.25;
     const sideSpeed = -(pullX / PULL_LIMITS.maxX) * 1.50;
 
     target.set(0, 0, 0);
@@ -741,7 +739,7 @@ export class Slingshot {
     const positions = this.trajectoryLine.geometry.attributes.position.array;
     _curr.copy(worldStart);
 
-    const dt = 1 / 35;
+    const dt = 1 / 22;
     let hitFound = false;
 
     for (let i = 0; i < this.trajectoryPoints; i++) {
