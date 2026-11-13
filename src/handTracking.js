@@ -44,8 +44,57 @@ export class HandTracker {
     this.isProcessing = false;
     this.lastCompletionTime = 0;
     this.lastInferenceDuration = 22; // Becsült következtetési idő (ms)
-    this.minIdleGapMs = 32; // ~22 FPS alap üresjárati rés, hogy a gyengébb processzorok se akadjanak
+    this.minIdleGapMs = 28;
+    this.pauseUntil = 0;
     this.videoCallbackId = null;
+    this._scriptsPromise = null;
+
+    // Web Worker alapú háttérszálú AI kézkövetés (zéró főszál-terhelés)
+    this.worker = null;
+    this.workerReady = false;
+    this.workerFailed = false;
+    this._workerInitPromise = null;
+    this.useWorker = typeof Worker !== 'undefined' && typeof createImageBitmap === 'function';
+  }
+
+  loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[src="${src}"]`);
+      if (existing) {
+        if (existing.dataset.loaded === 'true') {
+          resolve();
+          return;
+        }
+        existing.addEventListener('load', () => resolve(), { once: true });
+        existing.addEventListener('error', reject, { once: true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = src;
+      script.crossOrigin = 'anonymous';
+      script.async = true;
+      script.onload = () => {
+        script.dataset.loaded = 'true';
+        resolve();
+      };
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
+  async ensureScriptsLoaded() {
+    if (typeof window.Hands !== 'undefined') return true;
+    if (!this._scriptsPromise) {
+      this._scriptsPromise = Promise.all([
+        this.loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js'),
+        this.loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js').catch(() => {})
+      ]).catch((err) => {
+        this._scriptsPromise = null;
+        throw err;
+      });
+    }
+    await this._scriptsPromise;
+    return typeof window.Hands !== 'undefined';
   }
 
   initDOM(videoEl) {
@@ -64,20 +113,98 @@ export class HandTracker {
     this.externalStream = stream;
   }
 
+  initWorker() {
+    if (this.workerReady && this.worker) return Promise.resolve(true);
+    if (this.workerFailed) return Promise.resolve(false);
+    if (this._workerInitPromise) return this._workerInitPromise;
+
+    this._workerInitPromise = new Promise((resolve) => {
+      try {
+        this.worker = new Worker(new URL('./handWorker.js', import.meta.url), { type: 'module' });
+
+        const onInitMessage = (event) => {
+          const data = event.data;
+          if (!data) return;
+
+          if (data.type === 'READY') {
+            this.workerReady = true;
+            this.worker.removeEventListener('message', onInitMessage);
+            this.worker.addEventListener('message', this.onWorkerMessage.bind(this));
+            resolve(true);
+          } else if (data.type === 'ERROR') {
+            console.warn('HandWorker init hiba, főszálas fallbackre váltás:', data.message);
+            this.workerFailed = true;
+            this.useWorker = false;
+            try { this.worker.terminate(); } catch (e) {}
+            this.worker = null;
+            resolve(false);
+          }
+        };
+
+        this.worker.addEventListener('message', onInitMessage);
+        this.worker.addEventListener('error', (err) => {
+          console.warn('HandWorker futási hiba, fallbackre váltás:', err);
+          this.workerFailed = true;
+          this.useWorker = false;
+          this.isProcessing = false;
+          resolve(false);
+        });
+      } catch (err) {
+        this.workerFailed = true;
+        this.useWorker = false;
+        resolve(false);
+      }
+    });
+
+    return this._workerInitPromise;
+  }
+
+  onWorkerMessage(event) {
+    const data = event.data;
+    if (!data || data.type !== 'RESULT') return;
+
+    this.isProcessing = false;
+    this.lastCompletionTime = performance.now();
+    if (typeof data.duration === 'number' && data.duration > 0) {
+      this.lastInferenceDuration = data.duration;
+    }
+
+    if (!this.isActive) return;
+
+    if (!data.detected) {
+      this.processHandInput(false, 0, 0, 0, 99);
+    } else {
+      this.processHandInput(true, data.x, data.y, data.z, data.pinchDist);
+    }
+  }
+
   async start() {
     if (this.isActive) return;
     this.isActive = true;
+    this.pauseUntil = 0;
 
     if (this.handOverlay) this.handOverlay.classList.remove('hidden');
     if (this.onStatusChange) this.onStatusChange({ active: true, handDetected: false, isPinching: false });
 
-    // 1. Megvizsgáljuk, hogy elérhető-e a MediaPipe globálisan
-    if (typeof window.Hands !== 'undefined' && this.videoElement) {
-      try {
-        await this.initMediaPipe();
-      } catch (err) {
-        console.warn('MediaPipe indítási hiba:', err);
+    // Elsődleges: külön CPU-magon futó Web Worker (zéró főszál-akadás)
+    if (this.useWorker && this.videoElement) {
+      const ok = await this.initWorker();
+      if (!this.isActive) return;
+      if (ok) {
+        await this.startCameraStream();
+        return;
       }
+    }
+
+    // Fallback: hagyományos főszálas MediaPipe, ha a Worker nem indítható
+    try {
+      const loaded = await this.ensureScriptsLoaded();
+      if (!this.isActive) return;
+      if (loaded && this.videoElement) {
+        await this.initMediaPipe();
+      }
+    } catch (err) {
+      console.warn('MediaPipe betöltési/indítási hiba:', err);
     }
   }
 
@@ -122,6 +249,37 @@ export class HandTracker {
         }
       } catch (e) {}
       this.videoElement.srcObject = null;
+    }
+  }
+
+  async startCameraStream() {
+    this.isProcessing = false;
+    this.lastCompletionTime = 0;
+
+    if (this.externalStream && this.videoElement) {
+      this.videoElement.srcObject = this.externalStream;
+      await this.videoElement.play().catch(() => {});
+      this.startFrameLoop();
+      return;
+    }
+
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && this.videoElement) {
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 320, max: 480 },
+            height: { ideal: 240, max: 360 },
+            frameRate: { ideal: 24, max: 30 }
+          },
+          audio: false
+        });
+        this.videoElement.srcObject = this.stream;
+        await this.videoElement.play();
+        this.startFrameLoop();
+      } catch (err) {
+        console.warn('Szelfi kamera indítási hiba:', err);
+      }
     }
   }
 
@@ -174,8 +332,9 @@ export class HandTracker {
         if (window.Camera && this.videoElement) {
           this.cameraUtils = new window.Camera(this.videoElement, {
             onFrame: async () => {
-              if (!this.isActive || !this.mediaPipeHands || this.isProcessing || this.hasNativeXRHand) return;
+              if (!this.isActive || !this.mediaPipeHands || this.isProcessing || this.hasNativeXRHand || document.hidden) return;
               const now = performance.now();
+              if (now < this.pauseUntil) return;
               const adaptiveGap = Math.max(this.minIdleGapMs, this.lastInferenceDuration * 1.35);
               if (now - this.lastCompletionTime < adaptiveGap) return;
 
@@ -204,21 +363,44 @@ export class HandTracker {
       if (!this.isActive) return;
       const now = performance.now();
 
-      // Adaptív processzorkímélő időzítés: a gyenge telefonok CPU-ját max 40-45%-ban köti le az AI
-      const adaptiveGap = Math.max(this.minIdleGapMs, this.lastInferenceDuration * 1.35);
+      // Adaptív időzítés: Worker módban külön szálon számol, ezért elég kisebb rés is
+      const adaptiveGap = this.useWorker && this.workerReady
+        ? Math.max(20, this.lastInferenceDuration * 0.5)
+        : Math.max(this.minIdleGapMs, this.lastInferenceDuration * 1.35);
 
-      if (!this.isProcessing && !this.hasNativeXRHand && (now - this.lastCompletionTime >= adaptiveGap)) {
-        this.isProcessing = true;
-        const tStart = performance.now();
-        try {
-          if (this.videoElement && this.videoElement.readyState >= 2 && this.mediaPipeHands) {
-            await this.mediaPipeHands.send({ image: this.videoElement });
+      if (
+        !this.isProcessing &&
+        !this.hasNativeXRHand &&
+        !document.hidden &&
+        now >= this.pauseUntil &&
+        (now - this.lastCompletionTime >= adaptiveGap) &&
+        this.videoElement &&
+        this.videoElement.readyState >= 2
+      ) {
+        if (this.useWorker && this.workerReady && this.worker) {
+          this.isProcessing = true;
+          try {
+            const bitmap = await createImageBitmap(this.videoElement);
+            if (!this.isActive || !this.worker) {
+              bitmap.close();
+              this.isProcessing = false;
+            } else {
+              this.worker.postMessage({ type: 'FRAME', frame: bitmap, timestamp: now }, [bitmap]);
+            }
+          } catch (e) {
+            this.isProcessing = false;
           }
-        } catch (e) {
-        } finally {
-          this.isProcessing = false;
-          this.lastCompletionTime = performance.now();
-          this.lastInferenceDuration = this.lastCompletionTime - tStart;
+        } else if (this.mediaPipeHands) {
+          this.isProcessing = true;
+          const tStart = performance.now();
+          try {
+            await this.mediaPipeHands.send({ image: this.videoElement });
+          } catch (e) {
+          } finally {
+            this.isProcessing = false;
+            this.lastCompletionTime = performance.now();
+            this.lastInferenceDuration = this.lastCompletionTime - tStart;
+          }
         }
       }
 
@@ -237,6 +419,35 @@ export class HandTracker {
     if (!this.isActive) return;
 
     if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+      this.processHandInput(false, 0, 0, 0, 99);
+      return;
+    }
+
+    const landmarks = results.multiHandLandmarks[0];
+    const wrist = landmarks[0];
+    const middleMcp = landmarks[9];
+    const thumb = landmarks[4];
+    const index = landmarks[8];
+    const middle = landmarks[12];
+
+    const handScale = Math.hypot(wrist.x - middleMcp.x, wrist.y - middleMcp.y) || 0.22;
+    const dIndex = Math.hypot(thumb.x - index.x, thumb.y - index.y) / handScale;
+    const dMiddle = middle ? Math.hypot(thumb.x - middle.x, thumb.y - middle.y) / handScale : 99;
+    const pinchDist = Math.min(dIndex, dMiddle);
+
+    this.processHandInput(
+      true,
+      (thumb.x + index.x) * 0.5,
+      (thumb.y + index.y) * 0.5,
+      (thumb.z + index.z) * 0.5,
+      pinchDist
+    );
+  }
+
+  processHandInput(detected, x, y, z, pinchDist) {
+    if (!this.isActive) return;
+
+    if (!detected) {
       if (this.handReticle) this.handReticle.classList.add('hidden');
       if (this.onStatusChange) this.onStatusChange({ active: true, handDetected: false, isPinching: false });
       if (this.isPinching) {
@@ -246,25 +457,10 @@ export class HandTracker {
       return;
     }
 
-    const landmarks = results.multiHandLandmarks[0];
-    const wrist = landmarks[0];
-    const middleMcp = landmarks[9];
-    const thumb = landmarks[4];  // Hüvelykujj hegye
-    const index = landmarks[8];  // Mutatóujj hegye
-    const middle = landmarks[12]; // Középső ujj hegye
-
-    // Kéz méretének skálázási alapja (csukló és középső ujj töve közötti távolság)
-    const handScale = Math.hypot(wrist.x - middleMcp.x, wrist.y - middleMcp.y) || 0.22;
-
-    // 2D Normalizált Euklideszi távolság a hüvelykujj és mutatóujj/középső ujj között
-    const dIndex = Math.hypot(thumb.x - index.x, thumb.y - index.y) / handScale;
-    const dMiddle = middle ? Math.hypot(thumb.x - middle.x, thumb.y - middle.y) / handScale : 99;
-    const pinchDist = Math.min(dIndex, dMiddle);
-
-    // Kézközéppont számítása (hüvelyk és mutató ujj felezőpontja)
-    this.rawMid.x = (thumb.x + index.x) * 0.5;
-    this.rawMid.y = (thumb.y + index.y) * 0.5;
-    this.rawMid.z = (thumb.z + index.z) * 0.5;
+    // Kézközéppont frissítése
+    this.rawMid.x = x;
+    this.rawMid.y = y;
+    this.rawMid.z = z;
 
     // Adaptív simítás (One-Euro jellegű exponenciális szűrő):
     // Gyors mozgásnál azonnali reakció, lassú mozgásnál rezzenéstelen stabilitás
@@ -325,6 +521,9 @@ export class HandTracker {
           if (this.reticleLabel) this.reticleLabel.innerText = '🖐️ Kéz követve';
         }
         if (navigator.vibrate) navigator.vibrate(18);
+
+        // Kilövés után 900 ms AI-szünet: a becsapódás és fizikai omlás alatt 0% AI terhelés
+        this.pauseUntil = performance.now() + 900;
 
         if (this.onPinchEnd) this.onPinchEnd(true);
       }

@@ -18,10 +18,6 @@
   <meta name="apple-mobile-web-app-title" content="AR Ostrom">
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-
-  <!-- MediaPipe Hands & Camera Utils CDN a valós idejű kézkövetéshez -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
   <!-- 📹 Kamera Fallback Passthrough Videó (Háttérben a 3D grafika mögött) -->
@@ -147,12 +143,6 @@
           <span class="back-icon">⬅️</span>
           <span class="back-text">Főoldal</span>
         </button>
-
-        <!-- Aktív AR Technológia Vizuális Állapotjelző Badge -->
-        <div id="ar-mode-badge" class="ar-mode-pill webxr" title="Aktív AR Technológia">
-          <span class="ar-mode-dot"></span>
-          <span id="ar-mode-text">WebXR AR</span>
-        </div>
       </div>
 
       <div class="header-right">
@@ -191,22 +181,21 @@
       </div>
     </div>
 
-    <!-- 📡 TEREP- ÉS KÖRNYEZET-SZKENNELŐ ANIMÁCIÓ OVERLAY -->
+    <!-- 📡 TEREP- ÉS KÖRNYEZET-SZKENNELŐ ÁLLAPOTKÁRTYA (Szabad kameraközéppel!) -->
     <div id="scanning-overlay" class="scanning-overlay hidden">
-      <div class="scan-viewfinder">
-        <div class="scan-corner tl"></div>
-        <div class="scan-corner tr"></div>
-        <div class="scan-corner bl"></div>
-        <div class="scan-corner br"></div>
-        <div class="scan-laser-line"></div>
-        <div class="scan-radar-rings">
-          <div class="scan-ring r1"></div>
-          <div class="scan-ring r2"></div>
+      <div id="scan-card" class="scan-card">
+        <div class="scan-header-row">
+          <div class="scan-badge-group">
+            <span class="scan-pulse-dot"></span>
+            <span id="scan-step-badge" class="scan-step-badge">1/2 · VÁR HELYE</span>
+          </div>
+          <span id="scan-percent" class="scan-percent">0%</span>
         </div>
-      </div>
-      <div class="scan-status-pill">
-        <span class="scan-pulse-dot"></span>
-        <span id="scan-status-text">📡 Terep pásztázása folyamatban... Mozgasd a telefont!</span>
+        <div id="scan-status-title" class="scan-status-title">Irányítsd a kamerát egy vízszintes asztalra vagy padlóra!</div>
+        <div id="scan-status-sub" class="scan-status-sub">Mozgasd lassan a telefont a felület felett a beméréshez...</div>
+        <div class="scan-progress-track">
+          <div id="scan-progress-fill" class="scan-progress-fill"></div>
+        </div>
       </div>
     </div>
 
@@ -220,16 +209,14 @@
 
     <!-- 👆 Érintéses Célzó Felület (Csak Harc fázisban és Érintés módban aktív) -->
     <div id="touch-aim-surface" class="touch-aim-surface hidden">
-      <!-- Vizuális húzásjelző HUD elem -->
+      <!-- Letisztult vizuális húzásjelző HUD elem -->
       <div id="touch-drag-indicator" class="touch-drag-indicator hidden">
-        <div class="drag-anchor-ring"></div>
         <svg class="drag-line-svg">
           <line id="drag-line-el" x1="0" y1="0" x2="0" y2="0" />
         </svg>
-        <div id="drag-ball-el" class="drag-pull-ball"></div>
-        <div id="drag-power-badge" class="drag-power-badge">0%</div>
+        <div id="drag-power-badge" class="drag-power-badge">0% ERŐ</div>
       </div>
-      <!-- Finom útmutató tabletta a képernyő alsó harmadában -->
+      <!-- Egyszeri finom útmutató tabletta a képernyő alján -->
       <div id="touch-hint-pill" class="touch-hint-pill">
         👇 Érintsd meg és húzd lefelé a golyó kilövéséhez!
       </div>
@@ -245,10 +232,15 @@
       </div>
     </div>
 
-    <!-- Alsó kezelősáv (Letisztult lebegő üveg dokk) -->
+    <!-- Alsó kezelősáv (Kontextusfüggő lebegő dokk) -->
     <footer class="hud-footer">
       <div class="hud-dock">
-        <button id="btn-reset" class="btn btn-primary" title="Vár újraépítése">
+        <button id="btn-place-confirm" class="btn btn-confirm hidden" title="Lerakás a kijelölt helyre">
+          <span class="btn-icon">🏰</span>
+          <span class="btn-text">Lerakás ide</span>
+        </button>
+
+        <button id="btn-reset" class="btn btn-primary hidden" title="Vár újraépítése">
           <span class="btn-icon">🔄</span>
           <span class="btn-text">Újraépítés</span>
         </button>
@@ -258,12 +250,12 @@
           <span class="btn-text">Vártípus</span>
         </button>
 
-        <button id="btn-auto-slingshot" class="btn btn-warning hidden" title="Csúzli azonnali lehelyezése ideális távolságra (42 cm)">
+        <button id="btn-auto-slingshot" class="btn btn-warning hidden" title="Csúzli azonnali lehelyezése ideális távolságra">
           <span class="btn-icon">✨</span>
           <span class="btn-text">Auto csúzli</span>
         </button>
 
-        <button id="btn-reposition" class="btn btn-accent" title="Új elrendezés / Terep újraszkennelése">
+        <button id="btn-reposition" class="btn btn-accent hidden" title="Új elrendezés / Terep újraszkennelése">
           <span class="btn-icon">📍</span>
           <span class="btn-text">Áthelyezés</span>
         </button>

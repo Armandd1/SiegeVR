@@ -1,14 +1,15 @@
 import * as THREE from 'three';
 
 // ============================================================================
-// 1. TERÜLETFELTÉRKÉPEZŐ ÉS ANIMÁLT FELÜLETI SZKENNER (SURFACE SCANNER)
+// 1. LETISZTULT TEREP-SZKENNER ÉS FOLYAMATJELZŐ GYŰRŰ (SURFACE SCANNER)
 // ============================================================================
 export class SurfaceScanner {
   constructor(scene) {
     this.scene = scene;
     this.active = false;
-    this.locked = false;
     this.time = 0;
+    this.progress = 0;
+    this.isPlaneValid = false;
 
     this.group = new THREE.Group();
     this.group.visible = false;
@@ -24,47 +25,71 @@ export class SurfaceScanner {
     this.hasPose = false;
     this.lastPoseTime = 0;
 
-    // Felületi pásztázó hullámok (Sonár gyűrűk, amik kifelé terjednek a felületen)
-    this.wavesCount = 3;
-    this.sonarRings = [];
-    this.sonarMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.7,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-
-    for (let i = 0; i < this.wavesCount; i++) {
-      const ringGeo = new THREE.RingGeometry(0.04, 0.048, 36);
-      ringGeo.rotateX(-Math.PI / 2);
-      const ringMesh = new THREE.Mesh(ringGeo, this.sonarMat.clone());
-      ringMesh.position.y = 0.002;
-      this.group.add(ringMesh);
-      this.sonarRings.push({
-        mesh: ringMesh,
-        offset: (i / this.wavesCount)
-      });
-    }
-
-    // Holografikus Felületi Szkennelési Rács (Hatszögletű / Mátrix hatású felület)
-    this.createScanGrid();
-
-    // Precíziós AR Célzókarika (Reticle) forgó skálával és célkereszttel
-    this.createReticle();
-
-    // 3D Sík-kiemelő és rögzítési animáció effektek
     this.lockProgress = 1;
     this.onLock = null;
-    this.createLockEffects();
+
+    this.createReticleAndProgress();
+    this.createTetherLine();
   }
 
-  createLockEffects() {
-    this.lockGroup = new THREE.Group();
-    this.lockGroup.position.y = 0.0025;
+  createReticleAndProgress() {
+    this.reticleGroup = new THREE.Group();
+    this.reticleGroup.position.y = 0.002;
 
-    // 1. Kifelé táguló 3D holografikus lökéshullám (Shockwave Ring) a felismert asztalon
-    const shockwaveGeo = new THREE.RingGeometry(0.02, 0.05, 48);
+    // 1. Finom alap célzógyűrű
+    const baseGeo = new THREE.RingGeometry(0.105, 0.112, 48);
+    baseGeo.rotateX(-Math.PI / 2);
+    this.baseMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.4,
+      depthWrite: false
+    });
+    this.baseRing = new THREE.Mesh(baseGeo, this.baseMat);
+    this.reticleGroup.add(this.baseRing);
+
+    // 2. 3D Folyamatjelző karika (geometria újragenerálás nélkül, setDrawRange-dzsel!)
+    this.progressSegments = 48;
+    const progressGeo = new THREE.RingGeometry(0.116, 0.134, this.progressSegments);
+    progressGeo.rotateX(-Math.PI / 2);
+    progressGeo.rotateY(Math.PI / 2); // Elölről/felülről induljon a töltés
+    progressGeo.setDrawRange(0, 0);
+    this.progressGeo = progressGeo;
+
+    this.progressMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false
+    });
+    this.progressRing = new THREE.Mesh(this.progressGeo, this.progressMat);
+    this.progressRing.position.y = 0.0005;
+    this.reticleGroup.add(this.progressRing);
+
+    // 3. Belső célzógyűrű és középpont
+    const innerGeo = new THREE.RingGeometry(0.024, 0.031, 32);
+    innerGeo.rotateX(-Math.PI / 2);
+    this.innerMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false
+    });
+    this.innerRing = new THREE.Mesh(innerGeo, this.innerMat);
+    this.reticleGroup.add(this.innerRing);
+
+    const centerDot = new THREE.Mesh(
+      new THREE.CircleGeometry(0.006, 16).rotateX(-Math.PI / 2),
+      this.innerMat
+    );
+    centerDot.position.y = 0.0005;
+    this.reticleGroup.add(centerDot);
+
+    // 4. Egyetlen rögzítési visszajelző lökéshullám
+    const shockwaveGeo = new THREE.RingGeometry(0.11, 0.125, 48);
     shockwaveGeo.rotateX(-Math.PI / 2);
     this.lockShockwaveMat = new THREE.MeshBasicMaterial({
       color: 0x22c55e,
@@ -74,35 +99,51 @@ export class SurfaceScanner {
       depthWrite: false
     });
     this.lockShockwave = new THREE.Mesh(shockwaveGeo, this.lockShockwaveMat);
-    this.lockGroup.add(this.lockShockwave);
+    this.reticleGroup.add(this.lockShockwave);
 
-    // 2. Felismert síkot bevilágító holografikus koordináta-tányér (Shimmer Surface Disc)
-    const shimmerGeo = new THREE.CircleGeometry(0.48, 36);
-    shimmerGeo.rotateX(-Math.PI / 2);
-    this.lockShimmerMat = new THREE.MeshBasicMaterial({
-      color: 0x10b981,
+    this.group.add(this.reticleGroup);
+  }
+
+  createTetherLine() {
+    // 3D távolság- és irányjelző vonal a Vár és a Csúzli helye között
+    const positions = new Float32Array(6);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this.tetherMat = new THREE.LineBasicMaterial({
+      color: 0x38bdf8,
       transparent: true,
-      opacity: 0,
-      wireframe: true,
-      depthWrite: false
+      opacity: 0.85
     });
-    this.lockShimmer = new THREE.Mesh(shimmerGeo, this.lockShimmerMat);
-    this.lockGroup.add(this.lockShimmer);
+    this.tetherLine = new THREE.Line(geo, this.tetherMat);
+    this.tetherLine.visible = false;
+    this.tetherLine.frustumCulled = false;
+    this.scene.add(this.tetherLine);
+  }
 
-    // 3. Belső ragyogó pulzáló villanó-korong a rögzítés pillanatában
-    const flashGeo = new THREE.CircleGeometry(0.14, 32);
-    flashGeo.rotateX(-Math.PI / 2);
-    this.lockFlashMat = new THREE.MeshBasicMaterial({
-      color: 0x4ade80,
-      transparent: true,
-      opacity: 0,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-    this.lockFlash = new THREE.Mesh(flashGeo, this.lockFlashMat);
-    this.lockGroup.add(this.lockFlash);
+  updateTether(fromPos, toPos, visible, isValid = true) {
+    if (!this.tetherLine) return;
+    if (!visible || !fromPos || !toPos) {
+      this.tetherLine.visible = false;
+      return;
+    }
+    const arr = this.tetherLine.geometry.attributes.position.array;
+    arr[0] = fromPos.x;
+    arr[1] = fromPos.y + 0.006;
+    arr[2] = fromPos.z;
+    arr[3] = toPos.x;
+    arr[4] = toPos.y + 0.006;
+    arr[5] = toPos.z;
+    this.tetherLine.geometry.attributes.position.needsUpdate = true;
+    this.tetherMat.color.setHex(isValid ? 0x22c55e : 0xf97316);
+    this.tetherLine.visible = true;
+  }
 
-    this.group.add(this.lockGroup);
+  setProgress(progress) {
+    const p = Math.max(0, Math.min(1, progress));
+    this.progress = p;
+    // RingGeometry: minden szegmens 2 háromszög = 6 index
+    const count = Math.floor(p * this.progressSegments) * 6;
+    this.progressGeo.setDrawRange(0, count);
   }
 
   triggerLockAnimation() {
@@ -110,133 +151,6 @@ export class SurfaceScanner {
     if (this.onLock) {
       this.onLock();
     }
-  }
-
-  createScanGrid() {
-    this.gridGroup = new THREE.Group();
-    this.gridGroup.position.y = 0.001;
-
-    // Kör alakú, finom koordináta-háló a vizsgált felületre vetítve (átmérő: ~65 cm asztali méret)
-    const segments = 32;
-    const gridCircleGeo = new THREE.CircleGeometry(0.32, segments);
-    gridCircleGeo.rotateX(-Math.PI / 2);
-
-    this.gridMat = new THREE.MeshBasicMaterial({
-      color: 0x0284c7,
-      transparent: true,
-      opacity: 0.16,
-      wireframe: true,
-      depthWrite: false
-    });
-    this.gridCircle = new THREE.Mesh(gridCircleGeo, this.gridMat);
-    this.gridGroup.add(this.gridCircle);
-
-    // Keresztirányú pásztázó vonalak
-    const lineMat = new THREE.LineBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.4
-    });
-
-    const crossGeo = new THREE.BufferGeometry();
-    const crossPoints = new Float32Array([
-      -0.28, 0.001, 0,   0.28, 0.001, 0,
-      0, 0.001, -0.28,   0, 0.001, 0.28
-    ]);
-    crossGeo.setAttribute('position', new THREE.BufferAttribute(crossPoints, 3));
-    this.scanCross = new THREE.LineSegments(crossGeo, lineMat);
-    this.gridGroup.add(this.scanCross);
-
-    // Animált terep-szkennelő lézersugár csík (oda-vissza pásztáz a felületen)
-    const laserGeo = new THREE.PlaneGeometry(0.50, 0.012);
-    laserGeo.rotateX(-Math.PI / 2);
-    this.laserMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.75,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-    this.laserSweep = new THREE.Mesh(laserGeo, this.laserMat);
-    this.laserSweep.position.y = 0.002;
-    this.gridGroup.add(this.laserSweep);
-
-    // 4 holografikus sarokrögzítő (terület határolók a pásztázott zóna körül)
-    this.bracketMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8 });
-    const bracketMat = this.bracketMat;
-    const bSize = 0.22;
-    const bArm = 0.05;
-    [-1, 1].forEach(sx => {
-      [-1, 1].forEach(sz => {
-        const bg = new THREE.BufferGeometry();
-        const pts = new Float32Array([
-          sx * (bSize - bArm), 0.002, sz * bSize,
-          sx * bSize, 0.002, sz * bSize,
-          sx * bSize, 0.002, sz * bSize,
-          sx * bSize, 0.002, sz * (bSize - bArm)
-        ]);
-        bg.setAttribute('position', new THREE.BufferAttribute(pts, 3));
-        const bracket = new THREE.LineSegments(bg, bracketMat);
-        this.gridGroup.add(bracket);
-      });
-    });
-
-    this.group.add(this.gridGroup);
-  }
-
-  createReticle() {
-    this.reticleGroup = new THREE.Group();
-    this.reticleGroup.position.y = 0.003;
-
-    // 1. Belső pulzáló célzógyűrű
-    const innerGeo = new THREE.RingGeometry(0.030, 0.042, 32);
-    innerGeo.rotateX(-Math.PI / 2);
-    this.innerMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.95
-    });
-    this.innerRing = new THREE.Mesh(innerGeo, this.innerMat);
-    this.reticleGroup.add(this.innerRing);
-
-    // 2. Külső forgó mérőgyűrű szaggatott rovátkákkal
-    const outerGeo = new THREE.RingGeometry(0.055, 0.065, 36);
-    outerGeo.rotateX(-Math.PI / 2);
-    this.outerMat = new THREE.MeshBasicMaterial({
-      color: 0x0ea5e9,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.8
-    });
-    this.outerRing = new THREE.Mesh(outerGeo, this.outerMat);
-    this.reticleGroup.add(this.outerRing);
-
-    // 3. 4 sarok-irányzék a külső gyűrű szélén
-    const tickMat = new THREE.MeshBasicMaterial({
-      color: 0x7dd3fc,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.95
-    });
-    for (let i = 0; i < 4; i++) {
-      const angle = (i * Math.PI) / 2;
-      const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.012, 0.003), tickMat);
-      tick.rotateX(-Math.PI / 2);
-      tick.rotation.z = angle;
-      tick.position.set(Math.cos(angle) * 0.078, 0.001, Math.sin(angle) * 0.078);
-      this.reticleGroup.add(tick);
-    }
-
-    // 4. Célzópont a középpontban
-    const centerDot = new THREE.Mesh(
-      new THREE.CircleGeometry(0.005, 16).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide })
-    );
-    centerDot.position.y = 0.002;
-    this.reticleGroup.add(centerDot);
-
-    this.group.add(this.reticleGroup);
   }
 
   show() {
@@ -251,10 +165,13 @@ export class SurfaceScanner {
   stop() {
     this.active = false;
     this.hasPose = false;
+    this.isPlaneValid = false;
+    this.setProgress(0);
     this.group.visible = false;
+    if (this.tetherLine) this.tetherLine.visible = false;
   }
 
-  // Célzópozíció beállítása simítással, zajszűréssel és felületi szög ellenőrzéssel
+  // Célzópozíció beállítása simítással és zajszűréssel
   setPose(matrix, isValid = true) {
     if (!matrix) return;
     if (matrix instanceof Float32Array || Array.isArray(matrix)) {
@@ -271,12 +188,7 @@ export class SurfaceScanner {
     }
     this.targetQuat.setFromRotationMatrix(this.tempMat4);
 
-    const wasLocked = this.isPlaneValid;
     this.isPlaneValid = isValid;
-    if (!wasLocked && isValid) {
-      this.triggerLockAnimation();
-    }
-
     this.hasPose = true;
     this.lastPoseTime = performance.now();
 
@@ -305,13 +217,8 @@ export class SurfaceScanner {
     this.group.visible = true;
     this.active = true;
     this.hasPose = true;
-    this.lastPoseTime = performance.now();
-
-    const wasLocked = this.isPlaneValid;
     this.isPlaneValid = true;
-    if (!wasLocked) {
-      this.triggerLockAnimation();
-    }
+    this.lastPoseTime = performance.now();
   }
 
   update(dt) {
@@ -319,81 +226,43 @@ export class SurfaceScanner {
 
     this.time += dt;
 
-    // 1. Simított lebegés / mozgás (lerp + slerp a kézremegés és AR akadozás ellen)
-    const lerpFactor = Math.min(1, dt * 10);
+    // 1. Simított mozgás (lerp + slerp a kézremegés és AR akadozás ellen)
+    const lerpFactor = Math.min(1, dt * 12);
     this.currentPos.lerp(this.targetPos, lerpFactor);
     this.currentQuat.slerp(this.targetQuat, lerpFactor);
 
     this.group.position.copy(this.currentPos);
     this.group.quaternion.copy(this.currentQuat);
 
-    // 2. Külső gyűrű folyamatos high-tech forgatása
-    if (this.outerRing) {
-      this.outerRing.rotation.y = this.time * 0.85;
-    }
+    // 2. Állapotszín: zöld ha 100% kész és érvényes, narancs ha nem érvényes, ciánkék pásztázáskor
+    const isLockedReady = this.isPlaneValid && this.progress >= 1;
+    const colorHex = !this.isPlaneValid ? 0xf59e0b : (isLockedReady ? 0x22c55e : 0x38bdf8);
 
-    // 3. Szkennelő sonár gyűrűk tágulása és elhalványulása a felületen
-    const wavePeriod = 1.6; // másodperc egy hullámciklus
-    for (const ring of this.sonarRings) {
-      const cycleProgress = ((this.time / wavePeriod) + ring.offset) % 1.0;
-      // 0.05m-től 0.32m sugarig tágul a felületen
-      const scale = 1.0 + cycleProgress * 4.8;
-      ring.mesh.scale.set(scale, scale, scale);
-
-      // Fényerő görbe: kezdetben látható, a szélén elhalványul
-      const alpha = Math.sin(cycleProgress * Math.PI) * (this.isPlaneValid ? 0.65 : 0.25);
-      ring.mesh.material.opacity = alpha;
-    }
-
-    // 4. Szkennelési rács és lézersugár csík pásztázó animációja
-    if (this.gridMat) {
-      const pulse = 0.14 + Math.sin(this.time * 2.5) * 0.07;
-      this.gridMat.opacity = this.isPlaneValid ? pulse : 0.08;
-    }
-    if (this.laserSweep && this.laserMat) {
-      const sweepZ = Math.sin(this.time * 3.2) * 0.22;
-      this.laserSweep.position.z = sweepZ;
-      this.laserMat.opacity = this.isPlaneValid ? 0.65 + 0.25 * Math.sin(this.time * 6) : 0.25;
-    }
-
-    // 5. Szín állapot: élénk smaragdzöld (0x22c55e) ha rögzítve van, kék/cián (0x38bdf8) ha pásztáz
-    const colorHex = this.isPlaneValid ? 0x22c55e : 0x38bdf8;
     if (this.innerMat.color.getHex() !== colorHex) {
       this.innerMat.color.setHex(colorHex);
-      if (this.laserMat) this.laserMat.color.setHex(colorHex);
-      if (this.bracketMat) this.bracketMat.color.setHex(colorHex);
-      // A gyűrűk saját (klónozott) anyagot használnak, ezért egyenként kell átszínezni őket
-      for (const ring of this.sonarRings) {
-        ring.mesh.material.color.setHex(colorHex);
-      }
+      this.baseMat.color.setHex(colorHex);
+      this.progressMat.color.setHex(colorHex);
     }
 
-    // 6. Sík megtalálásakor lefutó látványos kiemelő animáció (Lock-in highlight)
+    // 3. Finom pulzálás amíg pásztáz
+    if (!isLockedReady) {
+      const pulse = 1 + Math.sin(this.time * 4) * 0.05;
+      this.innerRing.scale.setScalar(pulse);
+    } else if (this.lockProgress >= 1) {
+      this.innerRing.scale.setScalar(1);
+    }
+
+    // 4. Rögzítés pillanatában lefutó lökéshullám
     if (this.lockProgress < 1) {
-      this.lockProgress = Math.min(1, this.lockProgress + dt / 0.7);
+      this.lockProgress = Math.min(1, this.lockProgress + dt / 0.55);
       const t = this.lockProgress;
-
-      // Kifelé száguldó holografikus hullám (0.05m -> ~0.75m felületi kiterjedés az asztalon)
-      const shockScale = 1.0 + t * 14.0;
-      this.lockShockwave.scale.set(shockScale, shockScale, shockScale);
-      this.lockShockwaveMat.opacity = Math.pow(1 - t, 1.8) * 0.95;
-
-      // Bevilágító sík rács (finom pulzálás és elhalványulás a felismert asztalon)
-      const shimmerScale = 0.6 + t * 0.55;
-      this.lockShimmer.scale.set(shimmerScale, shimmerScale, shimmerScale);
-      this.lockShimmerMat.opacity = Math.sin(t * Math.PI) * 0.45;
-
-      // Középponti ragyogó villanás
-      this.lockFlashMat.opacity = Math.max(0, (1 - t * 2.2)) * 0.8;
-
-      // Célkereszt rugalmas kiugrása (Elastic bounce)
-      const bounce = 1.0 + Math.sin(t * Math.PI) * 0.35;
-      this.innerRing.scale.set(bounce, bounce, bounce);
-    } else {
-      if (this.lockShockwaveMat.opacity > 0) this.lockShockwaveMat.opacity = 0;
-      if (this.lockShimmerMat.opacity > 0) this.lockShimmerMat.opacity = 0;
-      if (this.lockFlashMat.opacity > 0) this.lockFlashMat.opacity = 0;
-      this.innerRing.scale.set(1, 1, 1);
+      const shockScale = 1.0 + t * 2.2;
+      this.lockShockwave.scale.setScalar(shockScale);
+      this.lockShockwaveMat.opacity = (1 - t) * 0.85;
+      const bounce = 1.0 + Math.sin(t * Math.PI) * 0.3;
+      this.innerRing.scale.setScalar(bounce);
+    } else if (this.lockShockwaveMat.opacity > 0) {
+      this.lockShockwaveMat.opacity = 0;
     }
   }
 
@@ -408,39 +277,40 @@ export class SurfaceScanner {
 }
 
 // ============================================================================
-// 2. FEJLETT RÉSZECSKERENDSZER (PARTICLE SYSTEM)
+// 2. FEJLETT RÉSZECSKERENDSZER (PARTICLE SYSTEM - ZERO ALLOCATION)
 // ============================================================================
+const MAX_PARTICLES = 55;
+
 export class ParticleSystem {
   constructor(scene) {
     this.scene = scene;
     this.particles = [];
     this.groundY = 0; // az asztal magassága (a törmelék ezen pattan meg)
-    this.pool = new Map(); // típusonkénti újrahasznosított háló készlet (nincs folyamatos GC terhelés)
+    this.pool = new Map(); // típusonkénti újrahasznosított háló készlet
+    this.particleObjPool = []; // újrahasznosított részecske-állapot objektumok
 
-    // Kőtörmelék geometria és anyag (újrafelhasznált példányok)
+    // Kőtörmelék geometria és anyag (gyors MeshLambertMaterial PBR overhead nélkül)
     this.debrisGeo = new THREE.DodecahedronGeometry(0.012, 0);
-    this.debrisMat = new THREE.MeshStandardMaterial({
-      color: 0x8b9bb4,
-      roughness: 0.7,
-      metalness: 0.1
+    this.debrisMat = new THREE.MeshLambertMaterial({
+      color: 0x8b9bb4
     });
 
     // Szikra / tűz geometria és anyag
-    this.sparkGeo = new THREE.SphereGeometry(0.006, 6, 6);
+    this.sparkGeo = new THREE.SphereGeometry(0.006, 5, 5);
     this.sparkMat = new THREE.MeshBasicMaterial({
       color: 0xf59e0b
     });
 
     // Füstpuff felhő geometria és anyag
-    this.smokeGeo = new THREE.SphereGeometry(0.02, 8, 8);
+    this.smokeGeo = new THREE.SphereGeometry(0.02, 6, 6);
     this.smokeMat = new THREE.MeshBasicMaterial({
       color: 0xd1d5db,
       transparent: true,
-      opacity: 0.5
+      opacity: 0.45
     });
 
     // Építési szikra geometria
-    this.magicSparkGeo = new THREE.SphereGeometry(0.007, 6, 6);
+    this.magicSparkGeo = new THREE.SphereGeometry(0.007, 5, 5);
     this.magicSparkMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8
     });
@@ -467,106 +337,124 @@ export class ParticleSystem {
     return mesh;
   }
 
-  release(mesh) {
-    mesh.visible = false;
-    const kind = mesh.userData.kind;
-    if (!this.pool.has(kind)) this.pool.set(kind, []);
-    this.pool.get(kind).push(mesh);
+  acquireState() {
+    return this.particleObjPool.pop() || {
+      mesh: null,
+      velocity: new THREE.Vector3(),
+      lifetime: 0.5,
+      age: 0,
+      isSmoke: false,
+      isTrail: false,
+      isMagic: false,
+      rotSpeed: 0
+    };
   }
 
-  // Meteor lövedék repülési füst- és csillagszóró csóvája
+  release(p) {
+    p.mesh.visible = false;
+    const kind = p.mesh.userData.kind;
+    if (!this.pool.has(kind)) this.pool.set(kind, []);
+    this.pool.get(kind).push(p.mesh);
+    p.mesh = null;
+    this.particleObjPool.push(p);
+  }
+
+  spawnParticle(kind, pos, vx, vy, vz, lifetime, flags = 0, rotSpeed = 0) {
+    if (this.particles.length >= MAX_PARTICLES) return;
+    const mesh = this.acquire(kind);
+    mesh.position.copy(pos);
+
+    const state = this.acquireState();
+    state.mesh = mesh;
+    state.velocity.set(vx, vy, vz);
+    state.lifetime = lifetime;
+    state.age = 0;
+    state.isSmoke = flags === 1;
+    state.isTrail = flags === 2;
+    state.isMagic = flags === 3;
+    state.rotSpeed = rotSpeed;
+    this.particles.push(state);
+    return mesh;
+  }
+
+  // Meteor lövedék repülési csóvája
   createTrail(position) {
-    if (this.particles.length > 140) return; // limit a maximális teljesítményhez
-
-    const mesh = this.acquire('spark');
-    mesh.position.copy(position);
-    mesh.position.x += (Math.random() - 0.5) * 0.02;
-    mesh.position.y += (Math.random() - 0.5) * 0.02;
-    mesh.position.z += (Math.random() - 0.5) * 0.02;
-
-    this.particles.push({
-      mesh,
-      velocity: new THREE.Vector3((Math.random() - 0.5) * 0.15, (Math.random() - 0.5) * 0.15, (Math.random() - 0.5) * 0.15),
-      lifetime: 0.28,
-      age: 0,
-      isTrail: true,
-      rotSpeed: 0
-    });
+    if (this.particles.length >= MAX_PARTICLES) return;
+    const mesh = this.spawnParticle(
+      'spark',
+      position,
+      (Math.random() - 0.5) * 0.14,
+      (Math.random() - 0.5) * 0.14,
+      (Math.random() - 0.5) * 0.14,
+      0.24,
+      2,
+      0
+    );
+    if (mesh) {
+      mesh.position.x += (Math.random() - 0.5) * 0.016;
+      mesh.position.y += (Math.random() - 0.5) * 0.016;
+      mesh.position.z += (Math.random() - 0.5) * 0.016;
+    }
   }
 
   // Építés / Letételkor mágikus energia- és porrobbanás
-  createPlacementBurst(position, count = 16) {
+  createPlacementBurst(position, count = 14) {
     for (let i = 0; i < count; i++) {
-      const mesh = this.acquire('magic');
-      mesh.position.copy(position);
-      mesh.position.y += 0.02;
-
+      if (this.particles.length >= MAX_PARTICLES) break;
       const angle = (i / count) * Math.PI * 2;
-      const speed = 0.8 + Math.random() * 0.6;
-      const velocity = new THREE.Vector3(
+      const speed = 0.8 + Math.random() * 0.5;
+      const mesh = this.spawnParticle(
+        'magic',
+        position,
         Math.cos(angle) * speed,
-        Math.random() * 0.6 + 0.3,
-        Math.sin(angle) * speed
+        Math.random() * 0.55 + 0.3,
+        Math.sin(angle) * speed,
+        0.5,
+        3,
+        0
       );
-
-      this.particles.push({
-        mesh,
-        velocity,
-        lifetime: 0.55,
-        age: 0,
-        isMagic: true,
-        rotSpeed: 0
-      });
+      if (mesh) mesh.position.y += 0.02;
     }
   }
 
   // Becsapódási kőtörmelék és füstfelhő
-  createImpact(position, count = 18) {
-    // 1. Kőtörmelékek kirepülése
+  createImpact(position, count = 10) {
     for (let i = 0; i < count; i++) {
+      if (this.particles.length >= MAX_PARTICLES) break;
       const isSpark = i % 3 === 0;
-      const mesh = this.acquire(isSpark ? 'spark' : 'debris');
-      mesh.position.copy(position);
-      mesh.position.x += (Math.random() - 0.5) * 0.04;
-      mesh.position.y += (Math.random() - 0.5) * 0.04;
-      mesh.position.z += (Math.random() - 0.5) * 0.04;
-
-      const speed = isSpark ? 2.2 : 1.4;
-      const velocity = new THREE.Vector3(
+      const speed = isSpark ? 2.1 : 1.35;
+      const mesh = this.spawnParticle(
+        isSpark ? 'spark' : 'debris',
+        position,
         (Math.random() - 0.5) * speed,
         Math.random() * speed * 0.9 + 0.4,
-        (Math.random() - 0.5) * speed
+        (Math.random() - 0.5) * speed,
+        isSpark ? 0.55 : 0.95,
+        0,
+        (Math.random() - 0.5) * 8
       );
-
-      this.particles.push({
-        mesh,
-        velocity,
-        lifetime: isSpark ? 0.6 : 1.1,
-        age: 0,
-        rotSpeed: (Math.random() - 0.5) * 8
-      });
+      if (mesh) {
+        mesh.position.x += (Math.random() - 0.5) * 0.04;
+        mesh.position.y += (Math.random() - 0.5) * 0.04;
+        mesh.position.z += (Math.random() - 0.5) * 0.04;
+      }
     }
 
-    // 2. Füstfelhő puffanás a becsapódási ponton
-    for (let i = 0; i < 4; i++) {
-      const smokeMesh = this.acquire('smoke');
-      smokeMesh.position.copy(position);
-      smokeMesh.material.opacity = 0.45;
-
-      const smokeVel = new THREE.Vector3(
+    for (let i = 0; i < 2; i++) {
+      if (this.particles.length >= MAX_PARTICLES) break;
+      const smokeMesh = this.spawnParticle(
+        'smoke',
+        position,
         (Math.random() - 0.5) * 0.3,
-        Math.random() * 0.4 + 0.1,
-        (Math.random() - 0.5) * 0.3
+        Math.random() * 0.35 + 0.1,
+        (Math.random() - 0.5) * 0.3,
+        0.75,
+        1,
+        0
       );
-
-      this.particles.push({
-        mesh: smokeMesh,
-        velocity: smokeVel,
-        lifetime: 0.85,
-        age: 0,
-        isSmoke: true,
-        rotSpeed: 0
-      });
+      if (smokeMesh && smokeMesh.material) {
+        smokeMesh.material.opacity = 0.45;
+      }
     }
   }
 
@@ -576,7 +464,7 @@ export class ParticleSystem {
       p.age += dt;
 
       if (p.age >= p.lifetime) {
-        this.release(p.mesh);
+        this.release(p);
         // O(1) eltávolítás: az utolsó elemet a helyére tesszük (a sorrend nem számít)
         const last = this.particles.pop();
         if (i < this.particles.length) this.particles[i] = last;
@@ -588,20 +476,18 @@ export class ParticleSystem {
       if (p.isSmoke) {
         p.velocity.y += 0.05 * dt;
         p.mesh.position.addScaledVector(p.velocity, dt);
-        const scale = 1 + progress * 2.5;
+        const scale = 1 + progress * 2.4;
         p.mesh.scale.setScalar(scale);
         if (p.mesh.material) {
           p.mesh.material.opacity = Math.max(0, 0.45 * (1 - progress));
         }
       } else if (p.isTrail) {
         p.mesh.position.addScaledVector(p.velocity, dt);
-        const scale = Math.max(0.01, 1 - progress);
-        p.mesh.scale.setScalar(scale);
+        p.mesh.scale.setScalar(Math.max(0.01, 1 - progress));
       } else if (p.isMagic) {
         p.velocity.y -= 3.2 * dt;
         p.mesh.position.addScaledVector(p.velocity, dt);
-        const scale = Math.max(0.01, 1 - progress);
-        p.mesh.scale.setScalar(scale);
+        p.mesh.scale.setScalar(Math.max(0.01, 1 - progress));
       } else {
         p.velocity.y -= 9.82 * dt * 0.65;
         p.mesh.position.addScaledVector(p.velocity, dt);
@@ -614,8 +500,7 @@ export class ParticleSystem {
           p.velocity.z *= 0.6;
         }
 
-        const scale = Math.max(0.01, 1 - progress);
-        p.mesh.scale.setScalar(scale);
+        p.mesh.scale.setScalar(Math.max(0.01, 1 - progress));
         p.mesh.rotation.x += p.rotSpeed * dt;
         p.mesh.rotation.y += p.rotSpeed * dt;
       }
@@ -624,7 +509,7 @@ export class ParticleSystem {
 
   clear() {
     for (const p of this.particles) {
-      this.release(p.mesh);
+      this.release(p);
     }
     this.particles = [];
   }

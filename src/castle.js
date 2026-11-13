@@ -71,7 +71,7 @@ export class CastleBuilder {
     }
 
     // Természetes kőzaj és kőmintázat
-    for (let i = 0; i < 2200; i++) {
+    for (let i = 0; i < 800; i++) {
       const px = Math.random() * 512;
       const py = Math.random() * 512;
       ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.22)';
@@ -83,16 +83,10 @@ export class CastleBuilder {
     stoneTex.wrapS = THREE.RepeatWrapping;
     stoneTex.wrapT = THREE.RepeatWrapping;
     stoneTex.colorSpace = THREE.SRGBColorSpace;
-    stoneTex.anisotropy = 4;
-
-    const bumpTex = new THREE.CanvasTexture(stoneCanvas);
-    bumpTex.wrapS = THREE.RepeatWrapping;
-    bumpTex.wrapT = THREE.RepeatWrapping;
+    stoneTex.anisotropy = 2;
 
     this.stoneMaterial = new THREE.MeshStandardMaterial({
       map: stoneTex,
-      bumpMap: bumpTex,
-      bumpScale: 0.004,
       roughness: 0.78,
       metalness: 0.12
     });
@@ -243,15 +237,11 @@ export class CastleBuilder {
     this.ghostGroup.clear();
     this.ghostLayout = layoutName;
 
-    // Blokkok előnézete a vártípus alapján – közvetlenül a talajon (nincs platform!)
+    // Blokkok letisztult előnézete (egyetlen áttetsző réteg dupla LineSegments nélkül)
     for (const b of this.getLayoutSpec(layoutName)) {
       const mesh = new THREE.Mesh(this.boxGeometry, this.ghostMaterial);
       mesh.position.set(b.x, b.y, b.z);
       this.ghostGroup.add(mesh);
-
-      const edges = new THREE.LineSegments(this.boxEdgesGeo, this.ghostEdgeMaterial);
-      edges.position.set(b.x, b.y, b.z);
-      this.ghostGroup.add(edges);
     }
   }
 
@@ -435,7 +425,7 @@ export class CastleBuilder {
   createBlock(worldX, worldY, worldZ, material, mass = 0.65) {
     const mesh = new THREE.Mesh(this.boxGeometry, material);
     mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.receiveShadow = false;
     mesh.position.set(worldX, worldY, worldZ);
     mesh.rotation.y = this.yaw;
     mesh.userData.isCastleBlock = true;

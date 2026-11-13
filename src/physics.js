@@ -15,11 +15,12 @@ export class PhysicsWorld {
     this.world = new CANNON.World({
       gravity: new CANNON.Vec3(0, GRAVITY, 0)
     });
+    this.world.broadphase = new CANNON.SAPBroadphase(this.world);
 
-    // Stabilitás és sebesség optimalizáció: 18 solver iteráció lag-mentes fizikai számítással
+    // Stabilitás és sebesség optimalizáció: 8 solver iteráció lag-mentes fizikai számítással
     if (this.world.solver) {
-      this.world.solver.iterations = 18;
-      this.world.solver.tolerance = 0.0001;
+      this.world.solver.iterations = 8;
+      this.world.solver.tolerance = 0.001;
     }
 
     this.world.allowSleep = true;
@@ -165,13 +166,16 @@ export class PhysicsWorld {
   step(dt) {
     // Delta-idő lefogása maximum 33 ms-re, megakadályozva a képkockavesztés miatti robbanásokat
     const safeDt = Math.min(dt, 0.033);
-    this.world.step(PHYSICS_DT, safeDt, 3);
+    this.world.step(PHYSICS_DT, safeDt, 2);
 
     // Three.js hálók szinkronizálása – statikus és alvó testeket kihagyjuk (nem mozdulnak)
+    let movedCount = 0;
     for (const { mesh, body } of this.syncObjects) {
       if (body.type === CANNON.Body.STATIC || body.sleepState === CANNON.Body.SLEEPING) continue;
       mesh.position.copy(body.position);
       mesh.quaternion.copy(body.quaternion);
+      movedCount++;
     }
+    return movedCount;
   }
 }

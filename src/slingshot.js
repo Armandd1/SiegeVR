@@ -14,7 +14,7 @@ export const PULL_LIMITS = {
 
 const MAX_PROJECTILES = 10;
 const PROJECTILE_LIFETIME_MS = 6500;
-const TRAJECTORY_POINTS = 90;
+const TRAJECTORY_POINTS = 50;
 
 // Újrafelhasznált ideiglenes vektorok (nincs képkockánkénti allokáció)
 const _v1 = new THREE.Vector3();
@@ -29,6 +29,8 @@ const _hitNormal = new THREE.Vector3();
 const _camPos = new THREE.Vector3();
 const _launchStart = new THREE.Vector3();
 const _impactPoint = new THREE.Vector3();
+const _cannonImpulse = new Vec3();
+const _cannonPoint = new Vec3();
 const _Z_NEG = new THREE.Vector3(0, 0, -1);
 const _Z_POS = new THREE.Vector3(0, 0, 1);
 const _Y_UP = new THREE.Vector3(0, 1, 0);
@@ -73,7 +75,7 @@ export class Slingshot {
     this.restLocalPos = new THREE.Vector3(0, this.stemHeight + this.forkHeight * 0.45, 0);
 
     this.radius = 0.022; // 4.4 cm átmérőjű ostromlövedék
-    this.sphereGeo = new THREE.SphereGeometry(this.radius, 18, 18);
+    this.sphereGeo = new THREE.SphereGeometry(this.radius, 12, 12);
 
     // Izzó meteor / tüzes ágyúgolyó anyag
     this.projectileMat = new THREE.MeshStandardMaterial({
@@ -95,7 +97,7 @@ export class Slingshot {
     const pouchMat = new THREE.MeshStandardMaterial({ color: 0x3d2314, roughness: 0.9 });
     this.pouch = new THREE.Mesh(pouchGeo, pouchMat);
     this.pouch.position.copy(this.restLocalPos);
-    this.pouch.castShadow = true;
+    this.pouch.castShadow = false;
     this.group.add(this.pouch);
 
     // Kézfogó / Célzó karika (elrejtve, célzási segítség kikapcsolva)
@@ -169,6 +171,7 @@ export class Slingshot {
     this.groundY = 0;
     this.effects = null;
     this.onAimStateChange = null;
+    this.hasFiredOnce = false;
 
     // A sugárkövetéshez használt objektumok (csak a csúzli, a ghost nélkül)
     this.grabTargets = null;
@@ -308,11 +311,11 @@ export class Slingshot {
 
     // 2. Fő törzs / fogantyú
     const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.008, 0.012, this.stemHeight, 14),
+      new THREE.CylinderGeometry(0.008, 0.012, this.stemHeight, 12),
       woodMat
     );
     stem.position.set(0, this.stemHeight / 2 + 0.006, 0);
-    stem.castShadow = true;
+    stem.castShadow = false;
     this.modelGroup.add(stem);
 
     // 3. Két villa ág
@@ -320,18 +323,18 @@ export class Slingshot {
     this.leftForkTip = new THREE.Vector3(-this.forkWidth / 2, forkY + this.forkHeight, 0);
     this.rightForkTip = new THREE.Vector3(this.forkWidth / 2, forkY + this.forkHeight, 0);
 
-    const forkGeo = new THREE.CylinderGeometry(0.006, 0.0085, this.forkHeight, 12);
+    const forkGeo = new THREE.CylinderGeometry(0.006, 0.0085, this.forkHeight, 10);
 
     const forkL = new THREE.Mesh(forkGeo, woodMat);
     forkL.position.set(-this.forkWidth / 3.4, forkY + this.forkHeight * 0.46, 0);
     forkL.rotation.z = Math.PI / 6.2;
-    forkL.castShadow = true;
+    forkL.castShadow = false;
     this.modelGroup.add(forkL);
 
     const forkR = new THREE.Mesh(forkGeo, woodMat);
     forkR.position.set(this.forkWidth / 3.4, forkY + this.forkHeight * 0.46, 0);
     forkR.rotation.z = -Math.PI / 6.2;
-    forkR.castShadow = true;
+    forkR.castShadow = false;
     this.modelGroup.add(forkR);
 
     // 4. Réz rögzítőgyűrűk a villahegyeken
@@ -363,8 +366,8 @@ export class Slingshot {
 
     this.bandLeft = new THREE.Mesh(bandGeo, bandMat);
     this.bandRight = new THREE.Mesh(bandGeo, bandMat);
-    this.bandLeft.castShadow = true;
-    this.bandRight.castShadow = true;
+    this.bandLeft.castShadow = false;
+    this.bandRight.castShadow = false;
 
     this.group.add(this.bandLeft);
     this.group.add(this.bandRight);
@@ -452,6 +455,7 @@ export class Slingshot {
     if (fire && localPull.z > PULL_LIMITS.fireZ) {
       this.launch(localPull);
       launched = true;
+      this.hasFiredOnce = true;
       // A gumi előrecsapódik, a fészekbe pedig "újratöltődik" egy új golyó
       this.springOffset.copy(localPull).multiplyScalar(-0.35);
       this.springVel.set(0, 0, 0);
@@ -541,12 +545,12 @@ export class Slingshot {
     let activePointerId = null;
     let startX = 0;
     let startY = 0;
+    let lastPowerPct = -1;
 
     // DOM Célzó Segédelemek
     const touchSurface = document.getElementById('touch-aim-surface');
     const dragIndicator = document.getElementById('touch-drag-indicator');
     const dragLineEl = document.getElementById('drag-line-el');
-    const dragBallEl = document.getElementById('drag-ball-el');
     const dragPowerBadge = document.getElementById('drag-power-badge');
     const touchHint = document.getElementById('touch-hint-pill');
 
@@ -582,6 +586,7 @@ export class Slingshot {
         activePointerId = e.pointerId;
         startX = e.clientX;
         startY = e.clientY;
+        lastPowerPct = 0;
 
         if (e.target && e.target.setPointerCapture) {
           try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
@@ -589,15 +594,6 @@ export class Slingshot {
 
         if (dragIndicator) {
           dragIndicator.classList.remove('hidden');
-          const anchorRing = dragIndicator.querySelector('.drag-anchor-ring');
-          if (anchorRing) {
-            anchorRing.style.left = `${startX}px`;
-            anchorRing.style.top = `${startY}px`;
-          }
-          if (dragBallEl) {
-            dragBallEl.style.left = `${startX}px`;
-            dragBallEl.style.top = `${startY}px`;
-          }
           if (dragLineEl) {
             dragLineEl.setAttribute('x1', startX);
             dragLineEl.setAttribute('y1', startY);
@@ -605,8 +601,7 @@ export class Slingshot {
             dragLineEl.setAttribute('y2', startY);
           }
           if (dragPowerBadge) {
-            dragPowerBadge.style.left = `${startX}px`;
-            dragPowerBadge.style.top = `${startY}px`;
+            dragPowerBadge.style.transform = `translate3d(${startX}px, ${startY}px, 0) translate(-50%, -140%)`;
             dragPowerBadge.innerText = '0% ERŐ';
           }
         }
@@ -644,22 +639,20 @@ export class Slingshot {
 
       this.setPull(effectivePullX, effectivePullY, effectivePullZ);
 
-      // Kijelző 2D HUD húzásjelző frissítése
+      // Kijelző 2D HUD húzásjelző frissítése (GPU transform, 0 reflow)
       if (dragIndicator && !dragIndicator.classList.contains('hidden')) {
-        if (dragBallEl) {
-          dragBallEl.style.left = `${e.clientX}px`;
-          dragBallEl.style.top = `${e.clientY}px`;
-        }
         if (dragLineEl) {
           dragLineEl.setAttribute('x2', e.clientX);
           dragLineEl.setAttribute('y2', e.clientY);
         }
         if (dragPowerBadge) {
-          dragPowerBadge.style.left = `${e.clientX}px`;
-          dragPowerBadge.style.top = `${e.clientY}px`;
+          dragPowerBadge.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0) translate(-50%, -140%)`;
           const pullSpan = Math.max(0.001, PULL_LIMITS.fullPowerZ - PULL_LIMITS.fireZ);
           const powerPct = Math.round(Math.min(100, Math.max(0, ((effectivePullZ - PULL_LIMITS.fireZ) / pullSpan) * 100)));
-          dragPowerBadge.innerText = `${powerPct}% ERŐ`;
+          if (powerPct !== lastPowerPct) {
+            lastPowerPct = powerPct;
+            dragPowerBadge.innerText = `${powerPct}% ERŐ`;
+          }
         }
       }
     };
@@ -671,15 +664,17 @@ export class Slingshot {
         try { e.target.releasePointerCapture(e.pointerId); } catch (err) {}
       }
       if (dragIndicator) dragIndicator.classList.add('hidden');
-      if (touchHint) touchHint.classList.remove('hidden');
       this.endAim(true);
+      if (touchHint && !this.hasFiredOnce) {
+        touchHint.classList.remove('hidden');
+      }
     };
 
     const onPointerCancel = (e) => {
       if (e.pointerId !== activePointerId) return;
       activePointerId = null;
       if (dragIndicator) dragIndicator.classList.add('hidden');
-      if (touchHint) touchHint.classList.remove('hidden');
+      if (touchHint && !this.hasFiredOnce) touchHint.classList.remove('hidden');
       this.endAim(false);
     };
 
@@ -732,7 +727,7 @@ export class Slingshot {
     const positions = this.trajectoryLine.geometry.attributes.position.array;
     _curr.copy(worldStart);
 
-    const dt = 1 / 50;
+    const dt = 1 / 35;
     let hitFound = false;
 
     for (let i = 0; i < this.trajectoryPoints; i++) {
@@ -811,19 +806,18 @@ export class Slingshot {
       // Kőtömbök aktiválása
       this.physics.wakeUpNear(impactPoint, 0.45);
 
-      // Kinetikus energia és impulzus átadása a közvetlenül eltalált merevtestnek
+      // Kinetikus energia és impulzus átadása a közvetlenül eltalált merevtestnek (zero-allocation)
       const v = body.velocity;
       const speed = Math.hypot(v.x, v.y, v.z);
       if (speed > 0.03) {
         const impulseMagnitude = 0.85 / Math.max(0.1, speed);
-        other.applyImpulse(
-          new Vec3(v.x * impulseMagnitude, v.y * impulseMagnitude, v.z * impulseMagnitude),
-          new Vec3(impactPoint.x, impactPoint.y, impactPoint.z)
-        );
+        _cannonImpulse.set(v.x * impulseMagnitude, v.y * impulseMagnitude, v.z * impulseMagnitude);
+        _cannonPoint.set(impactPoint.x, impactPoint.y, impactPoint.z);
+        other.applyImpulse(_cannonImpulse, _cannonPoint);
       }
     });
 
-    this.projectiles.push({ mesh, body, createdAt: performance.now() });
+    this.projectiles.push({ mesh, body, createdAt: performance.now(), trailTick: 0 });
 
     if (this.onShoot) {
       this.onShoot();
@@ -841,8 +835,9 @@ export class Slingshot {
     const now = performance.now();
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
-      // Repülő lövedék parázscsóvája
-      if (this.effects && p.body.velocity.lengthSquared() > 0.4) {
+      // Repülő lövedék parázscsóvája (minden 3. képkockán)
+      p.trailTick = (p.trailTick + 1) % 3;
+      if (this.effects && p.trailTick === 0 && p.body.velocity.lengthSquared() > 0.4) {
         this.effects.createTrail(p.mesh.position);
       }
       // Lejárt vagy az asztalról leesett lövedékek eltávolítása

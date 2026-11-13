@@ -97,24 +97,22 @@ html.xr-active {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  background: var(--glass-bg);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: rgba(10, 15, 29, 0.90);
   padding: 0.38rem 0.9rem;
   border-radius: 9999px;
   border: 1px solid var(--glass-border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.38);
   color: #fff;
   font-family: inherit;
   font-size: 0.85rem;
   font-weight: 700;
   cursor: pointer;
   pointer-events: auto;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
 .btn-back:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(30, 41, 59, 0.95);
   border-color: rgba(56, 189, 248, 0.45);
   transform: translateX(-2px);
 }
@@ -129,53 +127,6 @@ html.xr-active {
 
 .back-text {
   letter-spacing: 0.02em;
-}
-
-/* Aktív AR Technológia Pill Badge */
-.ar-mode-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  background: var(--glass-bg);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  padding: 0.32rem 0.65rem;
-  border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #e2e8f0;
-  pointer-events: auto;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  transition: all 0.2s ease;
-}
-
-.ar-mode-pill.webxr {
-  border-color: rgba(34, 197, 94, 0.45);
-  color: #86efac;
-}
-
-.ar-mode-pill.webrtc {
-  border-color: rgba(56, 189, 248, 0.45);
-  color: #7dd3fc;
-}
-
-.ar-mode-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 6px #22c55e;
-  animation: pulse 2s infinite ease-in-out;
-}
-
-.ar-mode-pill.webrtc .ar-mode-dot {
-  background: #38bdf8;
-  box-shadow: 0 0 6px #38bdf8;
-}
-
-.brand-pill {
-  display: none !important; /* Szöveg nem kell a felhasználó kérésének megfelelően */
 }
 
 .pulse-dot {
@@ -215,56 +166,17 @@ html.xr-active {
   background: rgba(255, 255, 255, 0.22);
 }
 
-.castle-type-badge {
-  color: #7dd3fc;
-  font-size: 0.78rem;
-  font-weight: 700;
-  white-space: nowrap;
-  letter-spacing: 0.02em;
-}
-
-/* Kör alakú ikon gombok (Hang, Súgó) */
-.icon-btn {
-  pointer-events: auto;
-  cursor: pointer;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--glass-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  color: #f8fafc;
-  font-size: 0.95rem;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
-}
-
-.icon-btn:hover {
-  background: rgba(99, 102, 241, 0.3);
-  border-color: rgba(99, 102, 241, 0.6);
-}
-
-.icon-btn:active {
-  transform: scale(0.92);
-}
-
 /* Pontszám jelvény - Letisztult és látványos */
 .stats-badge {
-  background: var(--glass-bg);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: rgba(10, 15, 29, 0.90);
   padding: 0.32rem 0.75rem;
   border-radius: 9999px;
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  border: 1px solid rgba(245, 158, 11, 0.4);
   display: flex;
   align-items: center;
   gap: 0.35rem;
   font-weight: 800;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.38);
 }
 
 .stats-badge .score-icon {
@@ -311,13 +223,11 @@ html.xr-active {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  background: rgba(15, 23, 42, 0.88);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(10, 15, 29, 0.90);
   padding: 0.22rem 0.75rem;
   border-radius: 9999px;
   border: 1px solid rgba(56, 189, 248, 0.35);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .step-item {
@@ -406,9 +316,7 @@ html.xr-active {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(10, 15, 29, 0.90);
   padding: 0.32rem 0.65rem;
   border-radius: 9999px;
   border: 1px solid rgba(6, 182, 212, 0.4);
@@ -418,140 +326,128 @@ html.xr-active {
   white-space: nowrap;
 }
 
-/* 📡 TEREP-SZKENNELŐ ANIMÁCIÓ OVERLAY */
+/* 📡 TEREP-SZKENNELŐ ÁLLAPOTKÁRTYA (Felső részre dokkolva, szabad kameraközéppel!) */
 .scanning-overlay {
   position: absolute;
-  top: 50%;
+  top: calc(5.2rem + var(--safe-top));
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
+  width: min(92vw, 390px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.25rem;
   pointer-events: none;
   z-index: 25;
-  transition: opacity 0.35s ease, transform 0.35s ease;
 }
 
-.scan-viewfinder {
-  position: relative;
-  width: min(70vw, 280px);
-  height: min(70vw, 280px);
-  border: 1px solid rgba(56, 189, 248, 0.22);
-  border-radius: 20px;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.05) 0%, transparent 70%);
-  box-shadow: inset 0 0 25px rgba(56, 189, 248, 0.1), 0 0 20px rgba(6, 182, 212, 0.15);
-  overflow: hidden;
-}
-
-.scan-corner {
-  position: absolute;
-  width: 24px;
-  height: 24px;
-  border-color: #38bdf8;
-  border-style: solid;
-  border-width: 0;
-  filter: drop-shadow(0 0 4px #06b6d4);
-}
-
-.scan-corner.tl { top: -1px; left: -1px; border-top-width: 3px; border-left-width: 3px; border-top-left-radius: 12px; }
-.scan-corner.tr { top: -1px; right: -1px; border-top-width: 3px; border-right-width: 3px; border-top-right-radius: 12px; }
-.scan-corner.bl { bottom: -1px; left: -1px; border-bottom-width: 3px; border-left-width: 3px; border-bottom-left-radius: 12px; }
-.scan-corner.br { bottom: -1px; right: -1px; border-bottom-width: 3px; border-right-width: 3px; border-bottom-right-radius: 12px; }
-
-.scan-laser-line {
-  position: absolute;
-  left: 0;
+.scan-card {
   width: 100%;
-  height: 3px;
-  background: linear-gradient(90deg, transparent 0%, rgba(56, 189, 248, 0.8) 25%, #22d3ee 50%, rgba(56, 189, 248, 0.8) 75%, transparent 100%);
-  box-shadow: 0 0 12px #38bdf8, 0 0 22px rgba(6, 182, 212, 0.9);
-  animation: scanSweepAnim 2.2s ease-in-out infinite alternate;
-}
-
-@keyframes scanSweepAnim {
-  0% { top: 4%; opacity: 0.35; }
-  50% { opacity: 1; }
-  100% { top: 96%; opacity: 0.35; }
-}
-
-.scan-radar-rings {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 100px;
-  height: 100px;
-}
-
-.scan-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 1.5px solid #06b6d4;
-  animation: scanRingPulse 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
-}
-
-.scan-ring.r2 {
-  animation-delay: 1.1s;
-}
-
-@keyframes scanRingPulse {
-  0% { transform: scale(0.12); opacity: 0.95; }
-  100% { transform: scale(1.45); opacity: 0; }
-}
-
-.scan-status-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  padding: 0.5rem 1.15rem;
-  border-radius: 9999px;
+  background: rgba(10, 15, 29, 0.90);
   border: 1px solid rgba(56, 189, 248, 0.45);
-  color: #f8fafc;
-  font-size: 0.82rem;
+  border-radius: 16px;
+  padding: 0.7rem 0.9rem;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.scan-card.locked {
+  border-color: rgba(34, 197, 94, 0.75);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45), 0 0 18px rgba(34, 197, 94, 0.25);
+}
+
+.scan-card.warning {
+  border-color: rgba(245, 158, 11, 0.75);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45), 0 0 18px rgba(245, 158, 11, 0.2);
+}
+
+.scan-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.scan-badge-group {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.scan-step-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #38bdf8;
+  text-transform: uppercase;
+}
+
+.scan-card.locked .scan-step-badge {
+  color: #4ade80;
+}
+
+.scan-card.warning .scan-step-badge {
+  color: #fbbf24;
+}
+
+.scan-percent {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #e0f2fe;
+  background: rgba(56, 189, 248, 0.16);
+  padding: 0.1rem 0.48rem;
+  border-radius: 9999px;
+}
+
+.scan-card.locked .scan-percent {
+  color: #dcfce7;
+  background: rgba(34, 197, 94, 0.24);
+}
+
+.scan-card.warning .scan-percent {
+  color: #fef3c7;
+  background: rgba(245, 158, 11, 0.24);
+}
+
+.scan-status-title {
+  font-size: 0.86rem;
   font-weight: 700;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(56, 189, 248, 0.3);
-  max-width: min(92vw, 420px);
-  text-align: center;
-  line-height: 1.35;
+  color: #f8fafc;
+  line-height: 1.25;
 }
 
-@keyframes scanLockBounce {
-  0% { transform: scale(0.92); }
-  40% { transform: scale(1.08); }
-  100% { transform: scale(1); }
+.scan-status-sub {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: #cbd5e1;
+  line-height: 1.3;
 }
 
-.scan-status-pill.locked {
-  border-color: #22c55e !important;
-  color: #86efac !important;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55), 0 0 22px rgba(34, 197, 94, 0.5) !important;
-  animation: scanLockBounce 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+.scan-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  margin-top: 0.15rem;
 }
 
-.scan-viewfinder.locked {
-  border-color: rgba(34, 197, 94, 0.65) !important;
-  box-shadow: inset 0 0 35px rgba(34, 197, 94, 0.25), 0 0 32px rgba(34, 197, 94, 0.35) !important;
-  background: radial-gradient(circle, rgba(34, 197, 94, 0.12) 0%, transparent 75%) !important;
+.scan-progress-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+  transition: width 0.1s linear, background 0.25s ease;
 }
 
-.scan-viewfinder.locked .scan-corner {
-  border-color: #22c55e !important;
-  filter: drop-shadow(0 0 8px #22c55e) !important;
+.scan-card.locked .scan-progress-fill {
+  background: linear-gradient(90deg, #16a34a, #4ade80);
 }
 
-.scan-viewfinder.locked .scan-laser-line {
-  background: linear-gradient(90deg, transparent 0%, rgba(34, 197, 94, 0.8) 25%, #4ade80 50%, rgba(34, 197, 94, 0.8) 75%, transparent 100%) !important;
-  box-shadow: 0 0 16px #22c55e, 0 0 28px rgba(34, 197, 94, 0.9) !important;
-}
-
-.scan-viewfinder.locked .scan-ring {
-  border-color: #22c55e !important;
+.scan-card.warning .scan-progress-fill {
+  background: linear-gradient(90deg, #d97706, #fbbf24);
 }
 
 .scan-pulse-dot {
@@ -559,16 +455,21 @@ html.xr-active {
   height: 8px;
   border-radius: 50%;
   background-color: #06b6d4;
-  box-shadow: 0 0 10px #06b6d4;
+  box-shadow: 0 0 8px #06b6d4;
   animation: pulse 1.6s infinite ease-in-out;
 }
 
-.scan-status-pill.locked .scan-pulse-dot {
+.scan-card.locked .scan-pulse-dot {
   background-color: #22c55e;
-  box-shadow: 0 0 10px #22c55e;
+  box-shadow: 0 0 8px #22c55e;
 }
 
-/* Alsó kezelősáv (Letisztult lebegő üveg dokk) */
+.scan-card.warning .scan-pulse-dot {
+  background-color: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+
+/* Alsó kezelősáv (Letisztult lebegő dokk) */
 .hud-footer {
   display: flex;
   justify-content: center;
@@ -582,13 +483,11 @@ html.xr-active {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  background: rgba(15, 23, 42, 0.76);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(10, 15, 29, 0.90);
   padding: 0.35rem 0.55rem;
   border-radius: 9999px;
   border: 1px solid var(--glass-border);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 16px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 .btn {
@@ -603,14 +502,19 @@ html.xr-active {
   font-family: var(--font);
   font-size: 0.78rem;
   font-weight: 700;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   color: #fff;
-  background: rgba(30, 41, 59, 0.7);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-  transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  background: rgba(30, 41, 59, 0.88);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
   white-space: nowrap;
+}
+
+.btn-confirm {
+  background: linear-gradient(135deg, #16a34a, #22c55e) !important;
+  border-color: rgba(134, 239, 172, 0.65) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.45);
 }
 
 .btn:active {
@@ -620,19 +524,16 @@ html.xr-active {
 .btn-primary:hover {
   background: rgba(99, 102, 241, 0.55);
   border-color: var(--primary);
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
 }
 
 .btn-secondary:hover {
   background: rgba(147, 51, 234, 0.55);
   border-color: #a855f7;
-  box-shadow: 0 4px 16px rgba(168, 85, 247, 0.4);
 }
 
 .btn-accent:hover {
   background: rgba(6, 182, 212, 0.55);
   border-color: var(--accent);
-  box-shadow: 0 4px 16px rgba(6, 182, 212, 0.4);
 }
 
 .btn-warning {
@@ -644,16 +545,10 @@ html.xr-active {
 .btn-warning:hover {
   background: rgba(245, 158, 11, 0.55) !important;
   border-color: #f59e0b !important;
-  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4) !important;
 }
 
 .btn-full {
   width: 100%;
-}
-
-/* Three.js ARButton teljes elrejtése */
-#ARButton {
-  display: none !important;
 }
 
 /* 📹 Kamera Fallback Passthrough Videó (Háttérben fut a 3D grafika mögött) */
@@ -1122,16 +1017,14 @@ html.xr-active {
 }
 
 .touch-hint-pill {
-  background: rgba(15, 23, 42, 0.82);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(10, 15, 29, 0.90);
   border: 1px solid rgba(245, 158, 11, 0.45);
   color: #fef3c7;
   font-size: 0.8rem;
   font-weight: 700;
   padding: 0.4rem 0.95rem;
   border-radius: 9999px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
   pointer-events: none;
   animation: pulseHint 2.4s infinite ease-in-out;
   transition: opacity 0.3s ease;
@@ -1142,27 +1035,12 @@ html.xr-active {
   50% { opacity: 0.65; transform: translateY(-4px); }
 }
 
-/* Kijelzőn megjelenő 2D húzásvezető elem */
+/* Kijelzőn megjelenő letisztult 2D húzásvezető elem */
 .touch-drag-indicator {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 60;
-}
-
-.drag-anchor-ring {
-  position: absolute;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 2px dashed rgba(245, 158, 11, 0.85);
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 15px rgba(245, 158, 11, 0.45);
-  animation: rotateAnchor 8s linear infinite;
-}
-
-@keyframes rotateAnchor {
-  100% { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
 .drag-line-svg {
@@ -1177,27 +1055,17 @@ html.xr-active {
 
 .drag-line-svg line {
   stroke: #fbbf24;
-  stroke-width: 3.5;
+  stroke-width: 3;
   stroke-linecap: round;
   stroke-dasharray: 6 4;
-  filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.8));
-}
-
-.drag-pull-ball {
-  position: absolute;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #fef08a, #f59e0b 60%, #b45309 100%);
-  border: 2px solid #fff;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.85);
 }
 
 .drag-power-badge {
   position: absolute;
-  transform: translate(-50%, -140%);
-  background: rgba(15, 23, 42, 0.92);
+  top: 0;
+  left: 0;
+  will-change: transform;
+  background: rgba(10, 15, 29, 0.92);
   border: 1px solid #fbbf24;
   border-radius: 9999px;
   padding: 0.15rem 0.55rem;
@@ -1312,31 +1180,8 @@ html.xr-active {
     gap: 0.35rem;
   }
 
-  .brand-pill {
-    padding: 0.25rem 0.6rem;
-    gap: 0.35rem;
-  }
-
   .title {
     font-size: 0.72rem;
-  }
-
-  .castle-type-badge {
-    font-size: 0.68rem;
-    max-width: 100px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .mode-select-btn {
-    font-size: 0.68rem;
-    padding: 0.25rem 0.55rem;
-  }
-
-  .icon-btn {
-    width: 32px;
-    height: 32px;
-    font-size: 0.85rem;
   }
 
   .stats-badge {
@@ -1383,12 +1228,5 @@ html.xr-active {
   .btn-phone-fab {
     padding: 0.6rem 1.1rem;
     font-size: 0.78rem;
-  }
-
-  #ARButton {
-    bottom: calc(62px + var(--safe-bottom)) !important;
-    padding: 8px 20px !important;
-    font-size: 0.82rem !important;
-    min-height: 38px !important;
   }
 }
