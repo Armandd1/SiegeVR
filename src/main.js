@@ -615,14 +615,25 @@ class WebXRApp {
     const isBattle = stage === 'BATTLE';
 
     if (this.btnPlaceConfirm) {
-      // Mindig látható a lerakás gomb szkennelés közben (sosem tiltjuk le feleslegesen)
       this.btnPlaceConfirm.classList.toggle('hidden', isBattle);
       const labelEl = this.btnPlaceConfirm.querySelector('.btn-text');
       const iconEl = this.btnPlaceConfirm.querySelector('.btn-icon');
       if (isCastle) {
-        if (iconEl) iconEl.innerText = '🏰';
-        if (labelEl) labelEl.innerText = 'Vár lerakása';
+        if (this.isSurfaceLocked) {
+          this.btnPlaceConfirm.disabled = false;
+          this.btnPlaceConfirm.classList.remove('disabled');
+          if (iconEl) iconEl.innerText = '🏰';
+          if (labelEl) labelEl.innerText = 'Vár lerakása';
+        } else {
+          this.btnPlaceConfirm.disabled = true;
+          this.btnPlaceConfirm.classList.add('disabled');
+          const pct = Math.round(this.scanProgress * 100);
+          if (iconEl) iconEl.innerText = '⏳';
+          if (labelEl) labelEl.innerText = `Pásztázás: ${pct}%`;
+        }
       } else if (isSlingshot) {
+        this.btnPlaceConfirm.disabled = false;
+        this.btnPlaceConfirm.classList.remove('disabled');
         if (iconEl) iconEl.innerText = '🎯';
         if (labelEl) labelEl.innerText = 'Csúzli lerakása';
       }
@@ -662,8 +673,8 @@ class WebXRApp {
       this.updateScanHUD(
         '1/2 · VÁR HELYE',
         0,
-        'Irányítsd a kamerát egy vízszintes asztalra vagy padlóra!',
-        'Mozgasd lassan a telefont a felület felett a beméréshez...',
+        '📡 Felület bemérése folyamatban... (0%)',
+        'Mozgasd lassan a telefont a felület felett a beméréshez!',
         'scanning'
       );
 
@@ -780,6 +791,19 @@ class WebXRApp {
     if (!this.isInGame) return;
 
     if (this.stage === 'PLACE_CASTLE') {
+      // VÁRAT CSAK AKKOR LEHET LERAKNI, HA BE VAN SCANNELVE A TERÜLET (100% és LOCKED)!
+      if (!this.isSurfaceLocked || this.scanProgress < 1) {
+        this.sounds.triggerHaptic(30);
+        const pct = Math.round(this.scanProgress * 100);
+        this.updateScanHUD(
+          '1/2 · VÁR HELYE',
+          pct,
+          `⚠️ Előbb fejezd be a bemérést (most: ${pct}%)!`,
+          'Tartsd a telefont a felület felé, amíg eléri a 100%-ot!',
+          'warning'
+        );
+        return;
+      }
       const pos = (this.scanner.hasPose || this.scanner.active)
         ? this.scanner.getPosition(this._scanPos)
         : this._tempVecA.copy(this.camera.position).add(this._tempVecB.set(0, -0.18, -0.55).applyQuaternion(this.camera.quaternion));
@@ -1089,10 +1113,15 @@ class WebXRApp {
           const targetBox = document.querySelector('.qr-target-box');
           if (targetBox) targetBox.classList.add('success');
 
+          // Kamerastream azonnali leállítása
+          if (this.qrScannerStream) {
+            try { this.qrScannerStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+            this.qrScannerStream = null;
+          }
+
           setTimeout(() => {
-            this.closeQRScanner();
             this.connectToLaptopController(code);
-          }, 350);
+          }, 300);
           return;
         }
       }
@@ -1147,10 +1176,14 @@ class WebXRApp {
           if (manualRow) manualRow.classList.add('hidden');
           if (startBtn && !this.isInGame) {
             startBtn.classList.remove('hidden');
-          } else {
-            this.closeQRScanner();
-            this.launchGame('REMOTE_HAND');
           }
+          // Automatikus indítás 450ms után, vagy a gomb megnyomásával azonnal
+          setTimeout(() => {
+            if (!this.isInGame) {
+              this.closeQRScanner();
+              this.launchGame('REMOTE_HAND');
+            }
+          }, 450);
         });
 
         conn.on('data', (data) => {
@@ -1231,7 +1264,6 @@ class WebXRApp {
         this.isXRActive = true;
         document.body.classList.add('xr-active');
         if (this.arStepper) this.arStepper.classList.remove('hidden');
-        this.startPlacement(1);
       }
 
       if (!this.hitTestSourceRequested && (this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT')) {
@@ -1245,94 +1277,96 @@ class WebXRApp {
       }
 
       // WebXR AR Felületkeresés (Hit-Testing) irányított folyamatjelzővel
-      if (this.hitTestSource && (this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT')) {
-        const hitTestResults = frame.getHitTestResults(this.hitTestSource);
+      if (this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT') {
+        let hasHit = false;
+        if (this.hitTestSource) {
+          const hitTestResults = frame.getHitTestResults(this.hitTestSource);
 
-        if (hitTestResults.length > 0) {
-          const hit = hitTestResults[0];
-          const pose = hit.getPose(referenceSpace);
-          if (pose && pose.transform) {
-            const m = pose.transform.matrix;
-            const upY = m[5];
-            const isHorizontal = upY > 0.25 || Math.abs(m[10]) > 0.25;
+          if (hitTestResults.length > 0) {
+            const hit = hitTestResults[0];
+            const pose = hit.getPose(referenceSpace);
+            if (pose && pose.transform) {
+              const m = pose.transform.matrix;
+              const upY = m[5];
+              const isHorizontal = upY > 0.25 || Math.abs(m[10]) > 0.25;
 
-            this.scanner.setPose(m, isHorizontal);
-            const scanPos = this.scanner.getPosition(this._scanPos);
-
-            if (this.stage === 'PLACE_CASTLE') {
-              if (this.scanProgress < 1) {
-                this.scanProgress = Math.min(1, this.scanProgress + dt * 1.5);
-                this.scanner.setProgress(this.scanProgress);
-              }
-
-              const pct = Math.round(this.scanProgress * 100);
-              if (this.scanProgress >= 0.5 || this.isSurfaceLocked) {
-                if (!this.isSurfaceLocked) {
-                  this.isSurfaceLocked = true;
-                  this.scanner.triggerLockAnimation();
-                  this.updateFooterButtons('PLACE_CASTLE');
-                }
-                const yaw = Math.atan2(this.camera.position.x - scanPos.x, this.camera.position.z - scanPos.z);
-                this.castle.showGhost(scanPos, null, yaw);
-                this.updateScanHUD(
-                  '1/2 · VÁR HELYE',
-                  100,
-                  '✅ Asztal bemérve — Kész a lerakásra!',
-                  'Koppints a képernyőre vagy a „Vár lerakása” gombra!',
-                  'locked'
-                );
-              } else {
-                this.castle.hideGhost();
-                this.updateScanHUD(
-                  '1/2 · VÁR HELYE',
-                  pct,
-                  `📡 Felület bemérése folyamatban... (${pct}%)`,
-                  'Tartsd a kamerát az asztal felé a felépítéshez!',
-                  'scanning'
-                );
-              }
-            } else if (this.stage === 'PLACE_SLINGSHOT') {
-              const distCm = Math.round(scanPos.distanceTo(this.castleWorldPos) * 100);
-              const isValid = distCm >= 18;
-              this.slingshot.updateGhost(scanPos, this.castleWorldPos, isValid);
-              this.scanner.updateTether(this.castleWorldPos, scanPos, true, isValid);
-
-              if (!isValid) {
-                this.updateScanHUD(
-                  '2/2 · CSÚZLI HELYE',
-                  100,
-                  `⚠️ Túl közel a várhoz (${distCm} cm — min. 18 cm kell)`,
-                  'Célozz távolabb a vártól (ideális: 35–50 cm), vagy bökj az Auto csúzlira!',
-                  'warning'
-                );
-              } else {
-                this.updateScanHUD(
-                  '2/2 · CSÚZLI HELYE',
-                  100,
-                  `✅ Csúzli helye ideális (${distCm} cm)`,
-                  'Koppints a lerakáshoz, vagy használd az „Auto csúzli” gombot!',
-                  'locked'
-                );
-              }
+              this.scanner.setPose(m, isHorizontal);
+              hasHit = true;
             }
           }
-        } else if (this.scanner.isPoseExpired(800)) {
-          if (this.stage === 'PLACE_CASTLE') {
+        }
+
+        // Ha az ARCore még keresi a síkot, azonnal kivetítjük a célzót a kamera elé
+        if (!hasHit && (!this.scanner.hasPose || this.scanner.isPoseExpired(600))) {
+          const camPos = this.camera.position;
+          const dir = this._tempDir.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+          const estPos = this._tempVecA.copy(camPos).addScaledVector(dir, 0.55);
+          estPos.y = Math.min(camPos.y - 0.20, -0.18);
+          this.scanner.setPositionDirect(estPos);
+        }
+
+        const scanPos = this.scanner.getPosition(this._scanPos);
+
+        if (this.stage === 'PLACE_CASTLE') {
+          // Aktív felületpásztázás: 0% -> 100% (~2 másodperc alatt)
+          if (this.scanProgress < 1) {
+            this.scanProgress = Math.min(1, this.scanProgress + dt * 0.50);
+            this.scanner.setProgress(this.scanProgress);
+          }
+
+          const pct = Math.round(this.scanProgress * 100);
+
+          if (this.scanProgress >= 1) {
+            if (!this.isSurfaceLocked) {
+              this.isSurfaceLocked = true;
+              this.scanner.triggerLockAnimation();
+              this.sounds.playBuild();
+              this.updateFooterButtons('PLACE_CASTLE');
+            }
+            const yaw = Math.atan2(this.camera.position.x - scanPos.x, this.camera.position.z - scanPos.z);
+            this.castle.showGhost(scanPos, null, yaw);
             this.updateScanHUD(
               '1/2 · VÁR HELYE',
-              Math.round(this.scanProgress * 100),
-              'Irányítsd a kamerát az asztal felé...',
+              100,
+              '✅ Asztal beszkennelve — Kész a lerakásra!',
+              'Koppints a képernyőre vagy a „Vár lerakása” gombra!',
+              'locked'
+            );
+          } else {
+            this.castle.hideGhost();
+            this.updateScanHUD(
+              '1/2 · VÁR HELYE',
+              pct,
+              `📡 Felület bemérése folyamatban... (${pct}%)`,
               'Mozgasd lassan a telefont a felület felett!',
               'scanning'
             );
-          } else {
-            this.scanner.updateTether(null, null, false);
+            if (this.btnPlaceConfirm) {
+              const labelEl = this.btnPlaceConfirm.querySelector('.btn-text');
+              if (labelEl) labelEl.innerText = `Pásztázás: ${pct}%`;
+            }
+          }
+        } else if (this.stage === 'PLACE_SLINGSHOT') {
+          const distCm = Math.round(scanPos.distanceTo(this.castleWorldPos) * 100);
+          const isValid = distCm >= 18;
+          this.slingshot.updateGhost(scanPos, this.castleWorldPos, isValid);
+          this.scanner.updateTether(this.castleWorldPos, scanPos, true, isValid);
+
+          if (!isValid) {
             this.updateScanHUD(
               '2/2 · CSÚZLI HELYE',
               100,
-              'Célozz az asztalra a csúzli lerakásához...',
-              'Irányítsd a kamerát a vár előtti szabad területre, vagy bökj az Auto csúzlira!',
-              'scanning'
+              `⚠️ Túl közel a várhoz (${distCm} cm — min. 18 cm kell)`,
+              'Célozz távolabb a vártól (ideális: 35–50 cm), vagy bökj az Auto csúzlira!',
+              'warning'
+            );
+          } else {
+            this.updateScanHUD(
+              '2/2 · CSÚZLI HELYE',
+              100,
+              `✅ Csúzli helye ideális (${distCm} cm)`,
+              'Koppints a lerakáshoz, vagy használd az „Auto csúzli” gombot!',
+              'locked'
             );
           }
         }
@@ -1346,20 +1380,23 @@ class WebXRApp {
       // Fallback kamera módban automatikus stabil szkennelés és elhelyezés
       if (this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT') {
         const dir = this._tempDir.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-        const dist = (this.stage === 'PLACE_CASTLE') ? 0.60 : 0.40;
+        const dist = (this.stage === 'PLACE_CASTLE') ? 0.55 : 0.40;
         const ghostPos = this._tempVecA.copy(this.camera.position).addScaledVector(dir, dist);
         ghostPos.y = -0.18;
         this.scanner.setPositionDirect(ghostPos);
 
         if (this.stage === 'PLACE_CASTLE') {
           if (this.scanProgress < 1) {
-            this.scanProgress = Math.min(1, this.scanProgress + dt * 1.5);
+            this.scanProgress = Math.min(1, this.scanProgress + dt * 0.50);
             this.scanner.setProgress(this.scanProgress);
           }
-          if (this.scanProgress >= 0.4 || this.isSurfaceLocked) {
+          const pct = Math.round(this.scanProgress * 100);
+
+          if (this.scanProgress >= 1) {
             if (!this.isSurfaceLocked) {
               this.isSurfaceLocked = true;
               this.scanner.triggerLockAnimation();
+              this.sounds.playBuild();
               this.updateFooterButtons('PLACE_CASTLE');
             }
             const yaw = Math.atan2(this.camera.position.x - ghostPos.x, this.camera.position.z - ghostPos.z);
@@ -1367,12 +1404,12 @@ class WebXRApp {
             this.updateScanHUD(
               '1/2 · VÁR HELYE',
               100,
-              '✅ Asztal bemérve — Kész a lerakásra!',
+              '✅ Asztal beszkennelve — Kész a lerakásra!',
               'Koppints a képernyőre vagy a „Vár lerakása” gombra!',
               'locked'
             );
           } else {
-            const pct = Math.round(this.scanProgress * 100);
+            this.castle.hideGhost();
             this.updateScanHUD(
               '1/2 · VÁR HELYE',
               pct,
@@ -1380,6 +1417,10 @@ class WebXRApp {
               'Irányítsd az asztal felé a telefont!',
               'scanning'
             );
+            if (this.btnPlaceConfirm) {
+              const labelEl = this.btnPlaceConfirm.querySelector('.btn-text');
+              if (labelEl) labelEl.innerText = `Pásztázás: ${pct}%`;
+            }
           }
         } else if (this.stage === 'PLACE_SLINGSHOT') {
           const distCm = Math.round(ghostPos.distanceTo(this.castleWorldPos) * 100);
