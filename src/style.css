@@ -279,11 +279,11 @@ html.xr-active {
 
 /* Telefonmozgás Mód: Kézreálló hüvelykujj FAB a jobb alsó sarokban (nem takarja a kamera közepét!) */
 .phone-motion-container {
-  position: fixed;
+  position: absolute !important;
   bottom: calc(72px + var(--safe-bottom));
   right: 16px;
-  z-index: 50;
-  pointer-events: auto;
+  z-index: 120 !important;
+  pointer-events: auto !important;
   touch-action: none !important;
   user-select: none !important;
   -webkit-user-select: none !important;
@@ -305,11 +305,16 @@ html.xr-active {
   letter-spacing: 0.05em;
   box-shadow: 0 8px 24px rgba(124, 58, 237, 0.6);
   cursor: pointer;
+  pointer-events: auto !important;
   touch-action: none !important;
   user-select: none !important;
   -webkit-user-select: none !important;
   -webkit-touch-callout: none !important;
   transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.btn-phone-fab * {
+  pointer-events: none !important;
 }
 
 .btn-phone-fab.grabbing {
@@ -483,10 +488,12 @@ html.xr-active {
   align-items: center;
   width: 100%;
   pointer-events: none;
+  position: relative;
+  z-index: 110 !important;
 }
 
 .hud-dock {
-  pointer-events: auto;
+  pointer-events: auto !important;
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -495,6 +502,9 @@ html.xr-active {
   border-radius: 9999px;
   border: 1px solid var(--glass-border);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  position: relative;
+  z-index: 111 !important;
+  touch-action: manipulation !important;
 }
 
 .btn {
@@ -515,6 +525,21 @@ html.xr-active {
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
   transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
   white-space: nowrap;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 112 !important;
+  touch-action: manipulation !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.btn * {
+  pointer-events: none !important;
+}
+
+.btn:active, .btn.active {
+  transform: scale(0.92) !important;
+  filter: brightness(1.25) !important;
 }
 
 .btn-confirm {

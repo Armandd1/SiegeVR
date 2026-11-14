@@ -861,6 +861,148 @@ class WebXRApp {
       }
     } catch (e) {}
 
+    // ⚡ Univerzális azonnali gombkötés (pointerup + touchend + click azonnali haptikus visszajelzéssel)
+    const bindFastButton = (btn, callback) => {
+      if (!btn) return;
+      let lastTrigger = 0;
+      const trigger = (e) => {
+        const now = Date.now();
+        if (now - lastTrigger < 260) return;
+        lastTrigger = now;
+        e.preventDefault();
+        e.stopPropagation();
+        this.sounds?.triggerHaptic(20);
+        callback(e);
+      };
+      btn.addEventListener('pointerup', trigger);
+      btn.addEventListener('touchend', trigger);
+      btn.addEventListener('click', trigger);
+    };
+
+    // ⚙️ Főoldali Röppálya vonalazás ki/bekapcsolása
+    this.toggleTrajectory?.addEventListener('change', (e) => {
+      const enabled = e.target.checked;
+      try {
+        localStorage.setItem('siege.trajectory', String(enabled));
+      } catch (err) {}
+      this.slingshot.setShowTrajectory(enabled);
+      this.sounds.playBuild();
+    });
+
+    // ⬅️ Vissza a főoldalra gomb (bezár minden kamerát és játékmódot)
+    bindFastButton(this.btnBack, () => {
+      this.returnToMainMenu();
+    });
+
+    // 🎲 Vár típusának váltása (BATTLE alatt újraépíti az új elrendezéssel, PLACE alatt átváltja a szellemet)
+    bindFastButton(this.btnCycle, () => {
+      this.slingshot.clearAllProjectiles();
+      const layouts = ['fortress', 'pyramid', 'twin_towers', 'citadel'];
+      const currIdx = layouts.indexOf(this.castle.currentLayout || 'fortress');
+      const nextLayout = layouts[(currIdx + 1) % layouts.length];
+      this.castle.currentLayout = nextLayout;
+
+      if (this.stage === 'PLACE_CASTLE') {
+        const initialPos = this.scanner.getPosition(this._scanPos);
+        const yaw = Math.atan2(this.camera.position.x - initialPos.x, this.camera.position.z - initialPos.z);
+        if (this.isSurfaceLocked) {
+          this.castle.showGhost(initialPos, nextLayout, yaw);
+        }
+        this.sounds.playBuild();
+      } else {
+        this.castle.buildCastleAt(this.castleWorldPos, nextLayout);
+        this.score = 0;
+        this.updateScoreDisplay();
+        this.sounds.playBuild();
+        this.effects.clear();
+        this.requestShadowUpdate();
+      }
+    });
+
+    // 🏰 / 🎯 Közvetlen lerakás gomb (Alternatíva a képernyőre koppintás helyett)
+    bindFastButton(this.btnPlaceConfirm, () => {
+      this.onSelect();
+    });
+
+    // 🔄 Teljes Újrakezdés (vár és csúzli újra-lehelyezése teljesen az 1. lépéstől)
+    bindFastButton(this.btnRestart, () => {
+      this.slingshot.clearAllProjectiles();
+      if (this.slingshot.isAiming) this.slingshot.endAim(false);
+      this.score = 0;
+      this.updateScoreDisplay();
+      this.effects.clear();
+      this.startPlacement(1);
+    });
+
+    // 📱 Telefonmozgás hüvelykujj FAB eseményei (WebXR Pointer Events + Pointer Capture)
+    let phonePointerId = null;
+
+    const startPhoneGrab = (e) => {
+      if (!this.isInGame || this.controlMode !== 'PHONE_MOTION' || this.stage !== 'BATTLE') return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.isPhonePulling = true;
+      phonePointerId = e.pointerId ?? null;
+      if (phonePointerId !== null && this.btnPhonePull && this.btnPhonePull.setPointerCapture) {
+        try { this.btnPhonePull.setPointerCapture(phonePointerId); } catch (err) {}
+      }
+      this.phoneAnchorCamPos.copy(this.camera.position);
+      this.slingshot.beginAim();
+      this.btnPhonePull?.classList.add('grabbing');
+      this.sounds.playTension();
+      this.sounds.triggerHaptic(25);
+    };
+
+    const endPhoneGrab = (e) => {
+      if (!this.isPhonePulling) return;
+      if (e) {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+      }
+      this.isPhonePulling = false;
+      if (phonePointerId !== null && this.btnPhonePull && this.btnPhonePull.releasePointerCapture) {
+        try { this.btnPhonePull.releasePointerCapture(phonePointerId); } catch (err) {}
+      }
+      phonePointerId = null;
+      this.btnPhonePull?.classList.remove('grabbing');
+
+      // Ha alig mozdult a telefon, vagy csak megnyomta a gombot, garantáljuk a lövést
+      const localPull = this._tempVecA.copy(this.slingshot.aimBall.position).sub(this.slingshot.restLocalPos);
+      if (localPull.z <= 0.010) {
+        this.slingshot.setPull(0, 0, 0.05);
+      }
+      this.slingshot.endAim(true);
+      this.sounds.triggerHaptic(30);
+    };
+
+    const cancelPhoneGrab = (e) => {
+      if (!this.isPhonePulling) return;
+      endPhoneGrab(e);
+    };
+
+    if (this.btnPhonePull) {
+      this.btnPhonePull.addEventListener('pointerdown', startPhoneGrab, { passive: false });
+      this.btnPhonePull.addEventListener('pointerup', endPhoneGrab, { passive: false });
+      this.btnPhonePull.addEventListener('pointercancel', cancelPhoneGrab, { passive: false });
+
+      this.btnPhonePull.addEventListener('touchstart', startPhoneGrab, { passive: false });
+      this.btnPhonePull.addEventListener('touchend', endPhoneGrab, { passive: false });
+      this.btnPhonePull.addEventListener('touchcancel', cancelPhoneGrab, { passive: false });
+
+      this.btnPhonePull.addEventListener('mousedown', startPhoneGrab);
+      window.addEventListener('mouseup', endPhoneGrab);
+    }
+
+    // Képernyőkoppintás a vár és csúzli lehelyezéséhez
+    const onPlacementPointerDown = (e) => {
+      if (!this.isInGame) return;
+      if (e.target && (e.target.closest('#ui-overlay button') || e.target.closest('#phone-motion-container') || e.target.closest('#main-menu'))) return;
+
+      if ((this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT')) {
+        this.onSelect();
+      }
+    };
+    window.addEventListener('pointerdown', onPlacementPointerDown);
   }
 
   // 💻 P2P WebRTC Csatlakozás a Laptop Kéz Kontrollerhez
@@ -939,133 +1081,6 @@ class WebXRApp {
       if (this.handStatusLabel) this.handStatusLabel.innerText = '🖐️ Kéz (Laptop)';
       if (data.fire && navigator.vibrate) navigator.vibrate(25);
     }
-
-    // ⚙️ Főoldali Röppálya vonalazás ki/bekapcsolása
-    this.toggleTrajectory?.addEventListener('change', (e) => {
-      const enabled = e.target.checked;
-      try {
-        localStorage.setItem('siege.trajectory', String(enabled));
-      } catch (err) {}
-      this.slingshot.setShowTrajectory(enabled);
-      this.sounds.playBuild();
-    });
-
-    // ⬅️ Vissza a főoldalra gomb (bezár minden kamerát és játékmódot)
-    this.btnBack?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.returnToMainMenu();
-    });
-
-    // 🎲 Vár típusának váltása (BATTLE alatt újraépíti az új elrendezéssel, PLACE alatt átváltja a szellemet)
-    this.btnCycle?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.slingshot.clearAllProjectiles();
-      const layouts = ['fortress', 'pyramid', 'twin_towers', 'citadel'];
-      const currIdx = layouts.indexOf(this.castle.currentLayout || 'fortress');
-      const nextLayout = layouts[(currIdx + 1) % layouts.length];
-      this.castle.currentLayout = nextLayout;
-
-      if (this.stage === 'PLACE_CASTLE') {
-        const initialPos = this.scanner.getPosition(this._scanPos);
-        const yaw = Math.atan2(this.camera.position.x - initialPos.x, this.camera.position.z - initialPos.z);
-        if (this.isSurfaceLocked) {
-          this.castle.showGhost(initialPos, nextLayout, yaw);
-        }
-        this.sounds.playBuild();
-      } else {
-        this.castle.buildCastleAt(this.castleWorldPos, nextLayout);
-        this.score = 0;
-        this.updateScoreDisplay();
-        this.sounds.playBuild();
-        this.effects.clear();
-        this.requestShadowUpdate();
-      }
-    });
-
-    // 🏰 / 🎯 Közvetlen lerakás gomb (Alternatíva a képernyőre koppintás helyett)
-    this.btnPlaceConfirm?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.onSelect();
-    });
-
-    // 🔄 Teljes Újrakezdés (vár és csúzli újra-lehelyezése teljesen az 1. lépéstől)
-    this.btnRestart?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.slingshot.clearAllProjectiles();
-      if (this.slingshot.isAiming) this.slingshot.endAim(false);
-      this.score = 0;
-      this.updateScoreDisplay();
-      this.effects.clear();
-      this.startPlacement(1);
-    });
-
-    // 📱 Telefonmozgás hüvelykujj FAB eseményei (WebXR Pointer Events + Pointer Capture)
-    let phonePointerId = null;
-
-    const startPhoneGrab = (e) => {
-      if (!this.isInGame || this.controlMode !== 'PHONE_MOTION' || this.stage !== 'BATTLE') return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.isPhonePulling = true;
-      phonePointerId = e.pointerId ?? null;
-      if (phonePointerId !== null && e.target && e.target.setPointerCapture) {
-        try { e.target.setPointerCapture(phonePointerId); } catch (err) {}
-      }
-      this.phoneAnchorCamPos.copy(this.camera.position);
-      this.slingshot.beginAim();
-      this.btnPhonePull?.classList.add('grabbing');
-      this.sounds.playTension();
-    };
-
-    const endPhoneGrab = (e) => {
-      if (!this.isPhonePulling) return;
-      if (e) {
-        e.preventDefault?.();
-        e.stopPropagation?.();
-      }
-      this.isPhonePulling = false;
-      if (phonePointerId !== null && this.btnPhonePull && this.btnPhonePull.releasePointerCapture) {
-        try { this.btnPhonePull.releasePointerCapture(phonePointerId); } catch (err) {}
-      }
-      phonePointerId = null;
-      this.btnPhonePull?.classList.remove('grabbing');
-
-      // Ha alig mozdult a telefon, vagy csak megnyomta a gombot, garantáljuk a lövést
-      const localPull = this._tempVecA.copy(this.slingshot.aimBall.position).sub(this.slingshot.restLocalPos);
-      if (localPull.z <= 0.010) {
-        this.slingshot.setPull(0, 0, 0.045);
-      }
-      this.slingshot.endAim(true);
-    };
-
-    const cancelPhoneGrab = (e) => {
-      if (!this.isPhonePulling) return;
-      endPhoneGrab(e);
-    };
-
-    if (this.btnPhonePull) {
-      this.btnPhonePull.addEventListener('pointerdown', startPhoneGrab, { passive: false });
-      this.btnPhonePull.addEventListener('pointerup', endPhoneGrab, { passive: false });
-      this.btnPhonePull.addEventListener('pointercancel', cancelPhoneGrab, { passive: false });
-
-      this.btnPhonePull.addEventListener('touchstart', startPhoneGrab, { passive: false });
-      this.btnPhonePull.addEventListener('touchend', endPhoneGrab, { passive: false });
-      this.btnPhonePull.addEventListener('touchcancel', cancelPhoneGrab, { passive: false });
-
-      this.btnPhonePull.addEventListener('mousedown', startPhoneGrab);
-      window.addEventListener('mouseup', endPhoneGrab);
-    }
-
-    // Képernyőkoppintás a vár és csúzli lehelyezéséhez
-    const onPlacementPointerDown = (e) => {
-      if (!this.isInGame) return;
-      if (e.target && (e.target.closest('#ui-overlay button') || e.target.closest('#phone-motion-container') || e.target.closest('#main-menu'))) return;
-
-      if ((this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT')) {
-        this.onSelect();
-      }
-    };
-    window.addEventListener('pointerdown', onPlacementPointerDown);
   }
 
   onWindowResize() {
