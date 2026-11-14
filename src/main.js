@@ -4,7 +4,6 @@ import { CastleBuilder } from './castle.js';
 import { Slingshot } from './slingshot.js';
 import { ParticleSystem, SoundEffects, SurfaceScanner } from './effects.js';
 import { HandTracker } from './handTracking.js';
-import jsQR from 'jsqr';
 
 class WebXRApp {
   constructor() {
@@ -25,17 +24,11 @@ class WebXRApp {
     this.btnStartPhone = document.getElementById('btn-start-phone');
     this.btnStartHand = document.getElementById('btn-start-hand');
     this.btnStartRemoteHand = document.getElementById('btn-start-remote-hand');
-
-    // 📷 Telefonos QR Kód Beolvasó Elemek
-    this.qrScannerModal = document.getElementById('qr-scanner-modal');
-    this.qrScannerVideo = document.getElementById('qr-scanner-video');
-    this.qrScannerCanvas = document.getElementById('qr-scanner-canvas');
-    this.qrScannerStatus = document.getElementById('qr-scanner-status');
-    this.btnCloseScanner = document.getElementById('btn-close-scanner');
-    this.btnConnectManual = document.getElementById('btn-connect-manual');
+    this.remoteCodeModal = document.getElementById('remote-code-modal');
     this.inputRemoteCode = document.getElementById('input-remote-code');
-    this.qrScannerStream = null;
-    this.qrScanningActive = false;
+    this.btnConnectRemote = document.getElementById('btn-connect-remote');
+    this.btnCancelRemote = document.getElementById('btn-cancel-remote');
+    this.remoteConnStatus = document.getElementById('remote-conn-status');
 
     this.remotePeer = null;
     this.remoteConn = null;
@@ -287,9 +280,6 @@ class WebXRApp {
       this.insecureWarning.classList.remove('hidden');
     }
 
-    // 🔗 Automatikus QR-kódos csatlakozás a Laptop Kontrollerhez (ha az URL-ben van ?remote=XXXX)
-    this.checkAutoRemoteConnect();
-
     // 11. Render loop
     this.lastTime = performance.now();
     this.renderer.setAnimationLoop(this.render.bind(this));
@@ -436,7 +426,6 @@ class WebXRApp {
     this.isPhonePulling = false;
     this.score = 0;
     this.updateScoreDisplay();
-    this.closeQRScanner();
 
     // 5. HUD és vezérlőszervek elrejtése
     if (this.uiOverlay) this.uiOverlay.classList.add('hidden');
@@ -615,7 +604,6 @@ class WebXRApp {
     const isBattle = stage === 'BATTLE';
 
     if (this.btnPlaceConfirm) {
-      // Csak akkor jelenik meg a vár lerakása gomb, ha a felület 100%-ban be van mérve és rögzítve!
       this.btnPlaceConfirm.classList.toggle('hidden', isBattle || (isCastle && !this.isSurfaceLocked));
       const labelEl = this.btnPlaceConfirm.querySelector('.btn-text');
       const iconEl = this.btnPlaceConfirm.querySelector('.btn-icon');
@@ -662,8 +650,8 @@ class WebXRApp {
       this.updateScanHUD(
         '1/2 · VÁR HELYE',
         0,
-        '📡 Felület bemérése folyamatban... (0%)',
-        'Mozgasd lassan a telefont a felület felett a beméréshez!',
+        'Irányítsd a kamerát egy vízszintes asztalra vagy padlóra!',
+        'Mozgasd lassan a telefont a felület felett a beméréshez...',
         'scanning'
       );
 
@@ -780,22 +768,13 @@ class WebXRApp {
     if (!this.isInGame) return;
 
     if (this.stage === 'PLACE_CASTLE') {
-      // VÁRAT CSAK AKKOR LEHET LERAKNI, HA BE VAN SCANNELVE A TERÜLET (100% és LOCKED)!
-      if (!this.isSurfaceLocked || this.scanProgress < 1) {
-        this.sounds.triggerHaptic(30);
-        const pct = Math.round(this.scanProgress * 100);
-        this.updateScanHUD(
-          '1/2 · VÁR HELYE',
-          pct,
-          `⚠️ Előbb fejezd be a bemérést (most: ${pct}%)!`,
-          'Tartsd a telefont a felület felé, amíg eléri a 100%-ot!',
-          'warning'
-        );
+      if (!this.isSurfaceLocked) {
+        this.sounds.triggerHaptic(15);
         return;
       }
       const pos = (this.scanner.hasPose || this.scanner.active)
         ? this.scanner.getPosition(this._scanPos)
-        : this._tempVecA.copy(this.camera.position).add(this._tempVecB.set(0, -0.18, -0.55).applyQuaternion(this.camera.quaternion));
+        : this._tempVecA.copy(this.camera.position).add(this._tempVecB.set(0, -0.15, -0.55).applyQuaternion(this.camera.quaternion));
       this.confirmCastlePlacement(pos);
       return;
     }
@@ -829,41 +808,125 @@ class WebXRApp {
       this.launchGame('HAND_TRACKING');
     });
 
-    // 💻 4. MÓD: Laptop Távoli Kézkövetés QR Beolvasóval
+    // 💻 4. MÓD: Laptop Távoli Kézkövetés párosítás
     this.btnStartRemoteHand?.addEventListener('click', (e) => {
       e.preventDefault();
-      this.openQRScanner();
+      if (this.remoteCodeModal) this.remoteCodeModal.classList.remove('hidden');
+      if (this.inputRemoteCode) {
+        this.inputRemoteCode.value = '';
+        this.inputRemoteCode.focus();
+      }
     });
 
-    this.btnCloseScanner?.addEventListener('click', (e) => {
+    this.btnCancelRemote?.addEventListener('click', (e) => {
       e.preventDefault();
-      this.closeQRScanner();
+      if (this.remoteCodeModal) this.remoteCodeModal.classList.add('hidden');
     });
 
-    this.btnConnectManual?.addEventListener('click', (e) => {
+    this.btnConnectRemote?.addEventListener('click', (e) => {
       e.preventDefault();
       const code = this.inputRemoteCode?.value?.trim();
       if (!code || code.length < 4) {
-        if (this.qrScannerStatus) this.qrScannerStatus.innerText = '⚠️ Írd be a 4 jegyű kódot!';
+        if (this.remoteConnStatus) this.remoteConnStatus.innerText = '⚠️ Kérlek írd be a 4 jegyű kódot!';
         return;
       }
-      this.closeQRScanner();
       this.connectToLaptopController(code);
     });
 
     this.inputRemoteCode?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        this.btnConnectManual?.click();
+        this.btnConnectRemote?.click();
       }
     });
 
-    // 🚀 Gyors indító gomb az AR élmény azonnali elindításához (megfelel a WebXR User Gesture szabálynak)
-    document.getElementById('btn-start-remote-game')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.closeQRScanner();
-      this.launchGame('REMOTE_HAND');
-    });
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const remote = urlParams.get('remote');
+      if (remote && remote.length === 4) {
+        if (this.inputRemoteCode) this.inputRemoteCode.value = remote;
+        if (this.remoteCodeModal) this.remoteCodeModal.classList.remove('hidden');
+      }
+    } catch (e) {}
+
+  }
+
+  // 💻 P2P WebRTC Csatlakozás a Laptop Kéz Kontrollerhez
+  connectToLaptopController(code) {
+    if (typeof window.Peer === 'undefined') {
+      if (this.remoteConnStatus) this.remoteConnStatus.innerText = '⏳ Hálózati modul betöltése, próbáld újra pár másodperc múlva...';
+      return;
+    }
+
+    if (this.remoteConnStatus) this.remoteConnStatus.innerText = `⏳ Csatlakozás a laptophoz (${code})...`;
+
+    try {
+      if (this.remotePeer) {
+        try { this.remotePeer.destroy(); } catch (e) {}
+      }
+
+      this.remotePeer = new window.Peer({ debug: 1 });
+
+      this.remotePeer.on('open', () => {
+        const targetId = `siege-laptop-${code}`;
+        console.log('Telefon Peer kész, csatlakozás a laptophoz:', targetId);
+        const conn = this.remotePeer.connect(targetId, { reliable: false }); // Unreliable: ultra-alacsony késleltetésű UDP WebRTC csatorna!
+
+        conn.on('open', () => {
+          console.log('P2P WebRTC kapcsolat létrejött a laptoppal!');
+          this.remoteConn = conn;
+          if (this.remoteConnStatus) this.remoteConnStatus.innerText = '✅ Sikeres kapcsolat! Játék indítása...';
+
+          setTimeout(() => {
+            if (this.remoteCodeModal) this.remoteCodeModal.classList.add('hidden');
+            this.launchGame('REMOTE_HAND');
+          }, 400);
+        });
+
+        conn.on('data', (data) => {
+          this.handleRemoteHandData(data);
+        });
+
+        conn.on('close', () => {
+          console.log('Laptop kapcsolat megszakadt');
+          if (this.handStatusLabel) this.handStatusLabel.innerText = '🔴 Laptop lekapcsolódott';
+        });
+
+        conn.on('error', (err) => {
+          console.warn('Kapcsolódási hiba a laptoppal:', err);
+          if (this.remoteConnStatus) this.remoteConnStatus.innerText = '❌ Nem található ilyen kódú laptop. Nyitva van a controller.html?';
+        });
+      });
+
+      this.remotePeer.on('error', (err) => {
+        console.warn('Telefon Peer hiba:', err);
+        if (this.remoteConnStatus) this.remoteConnStatus.innerText = '❌ Hálózati hiba. Ellenőrizd az internetkapcsolatot!';
+      });
+    } catch (e) {
+      if (this.remoteConnStatus) this.remoteConnStatus.innerText = '❌ Váratlan hiba a csatlakozáskor.';
+    }
+  }
+
+  // A laptopról érkező 60 FPS kéz-delta adatok feldolgozása (ZÉRÓ telefonos AI-terhelés!)
+  handleRemoteHandData(data) {
+    if (!this.isInGame || this.controlMode !== 'REMOTE_HAND') return;
+
+    if (data.type === 'PINCH_START') {
+      this.slingshot.beginAim();
+      if (this.handStatusLabel) this.handStatusLabel.innerText = '✊ Csippentve (Laptop)';
+      if (navigator.vibrate) navigator.vibrate(20);
+    } else if (data.type === 'PINCH_MOVE') {
+      const delta = data.delta || {};
+      const pullZ = (delta.z || 0) * 0.45 + (delta.y || 0) * 0.25;
+      const pullX = (delta.x || 0) * 0.35;
+      const pullY = -(delta.y || 0) * 0.25;
+
+      this.slingshot.setPull(pullX, pullY, pullZ);
+    } else if (data.type === 'PINCH_END') {
+      this.slingshot.endAim(data.fire !== false);
+      if (this.handStatusLabel) this.handStatusLabel.innerText = '🖐️ Kéz (Laptop)';
+      if (data.fire && navigator.vibrate) navigator.vibrate(25);
+    }
 
     // ⚙️ Főoldali Röppálya vonalazás ki/bekapcsolása
     this.toggleTrajectory?.addEventListener('change', (e) => {
@@ -958,9 +1021,6 @@ class WebXRApp {
     this.btnPhonePull?.addEventListener('touchstart', startPhoneGrab, { passive: false });
     window.addEventListener('touchend', endPhoneGrab);
 
-    // 👆 Érintéses célzó felület
-    this.initTouchAimSurface();
-
     // Képernyőkoppintás a vár és csúzli lehelyezéséhez
     const onPlacementPointerDown = (e) => {
       if (!this.isInGame) return;
@@ -971,262 +1031,6 @@ class WebXRApp {
       }
     };
     window.addEventListener('pointerdown', onPlacementPointerDown);
-  }
-
-  // 📷 Telefonos QR Kód Beolvasó megnyitása a hátlapi kamerával
-  async openQRScanner() {
-    if (this.qrScannerModal) this.qrScannerModal.classList.remove('hidden');
-    if (this.qrScannerStatus) this.qrScannerStatus.innerText = 'Irányítsd a kamerát a laptop képernyőjére!';
-    if (this.inputRemoteCode) this.inputRemoteCode.value = '';
-    const targetBox = document.querySelector('.qr-target-box');
-    if (targetBox) targetBox.classList.remove('success');
-
-    this.qrScanningActive = true;
-
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      if (this.qrScannerStatus) this.qrScannerStatus.innerText = '⚠️ A böngésző nem engedi a kamerát. Írd be a kódot!';
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 640 },
-          height: { ideal: 480 }
-        },
-        audio: false
-      });
-
-      this.qrScannerStream = stream;
-      if (this.qrScannerVideo) {
-        this.qrScannerVideo.srcObject = stream;
-        await this.qrScannerVideo.play().catch(e => console.warn('QR video play:', e));
-      }
-
-      this.startQRScanLoop();
-    } catch (err) {
-      console.warn('QR kamera megnyitási hiba:', err);
-      if (this.qrScannerStatus) {
-        this.qrScannerStatus.innerText = '⚠️ Kamera nem elérhető. Írd be a 4 jegyű kódot alul!';
-      }
-    }
-  }
-
-  // 📷 QR Kód Beolvasó bezárása és kamera felszabadítása
-  closeQRScanner() {
-    this.qrScanningActive = false;
-    if (this.qrScannerStream) {
-      try {
-        this.qrScannerStream.getTracks().forEach(track => track.stop());
-      } catch (e) {}
-      this.qrScannerStream = null;
-    }
-    if (this.qrScannerVideo) {
-      try {
-        this.qrScannerVideo.pause();
-        this.qrScannerVideo.srcObject = null;
-      } catch (e) {}
-    }
-    if (this.qrScannerModal) {
-      this.qrScannerModal.classList.add('hidden');
-    }
-  }
-
-  // 🔄 Valós idejű QR-kód felismerési hurok (BarcodeDetector + jsQR fallback)
-  startQRScanLoop() {
-    const video = this.qrScannerVideo;
-    const canvas = this.qrScannerCanvas || document.createElement('canvas');
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-    let barcodeDetector = null;
-    if ('BarcodeDetector' in window) {
-      try {
-        barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
-      } catch (e) {}
-    }
-
-    const scanFrame = async () => {
-      if (!this.qrScanningActive || !video || video.readyState < 2) {
-        if (this.qrScanningActive) requestAnimationFrame(scanFrame);
-        return;
-      }
-
-      let detectedCode = null;
-
-      // 1. Gyors hardveres natív BarcodeDetector
-      if (barcodeDetector) {
-        try {
-          const results = await barcodeDetector.detect(video);
-          if (results && results.length > 0 && results[0].rawValue) {
-            detectedCode = results[0].rawValue;
-          }
-        } catch (e) {}
-      }
-
-      // 2. jsQR könyvtár fallback
-      if (!detectedCode) {
-        try {
-          const w = 320;
-          const h = 240;
-          canvas.width = w;
-          canvas.height = h;
-          ctx.drawImage(video, 0, 0, w, h);
-          const imageData = ctx.getImageData(0, 0, w, h);
-          const qr = jsQR(imageData.data, imageData.width, imageData.height, {
-            inversionAttempts: 'dontInvert'
-          });
-          if (qr && qr.data) {
-            detectedCode = qr.data;
-          }
-        } catch (e) {}
-      }
-
-      if (detectedCode) {
-        let code = null;
-        try {
-          const url = new URL(detectedCode);
-          code = url.searchParams.get('remote');
-        } catch (e) {}
-        if (!code) {
-          const match = detectedCode.match(/\b\d{4}\b/);
-          if (match) code = match[0];
-        }
-
-        if (code) {
-          this.qrScanningActive = false;
-          if (navigator.vibrate) navigator.vibrate([40, 50, 40]);
-          if (this.qrScannerStatus) {
-            this.qrScannerStatus.innerHTML = `✅ Beolvasva: <strong style="color:#fbbf24">${code}</strong>! Csatlakozás...`;
-          }
-          const targetBox = document.querySelector('.qr-target-box');
-          if (targetBox) targetBox.classList.add('success');
-
-          // Kamerastream azonnali leállítása
-          if (this.qrScannerStream) {
-            try { this.qrScannerStream.getTracks().forEach(t => t.stop()); } catch (e) {}
-            this.qrScannerStream = null;
-          }
-
-          setTimeout(() => {
-            this.connectToLaptopController(code);
-          }, 300);
-          return;
-        }
-      }
-
-      if (this.qrScanningActive) {
-        requestAnimationFrame(scanFrame);
-      }
-    };
-
-    requestAnimationFrame(scanFrame);
-  }
-
-  // 🔗 Automatikus QR kódos csatlakozás (?remote=XXXX)
-  checkAutoRemoteConnect() {
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const remoteCode = urlParams.get('remote');
-      if (remoteCode && remoteCode.length === 4) {
-        console.log('Automatikus QR kódos csatlakozás észlelve:', remoteCode);
-        this.connectToLaptopController(remoteCode);
-      }
-    } catch (e) {}
-  }
-
-  // 💻 P2P WebRTC Csatlakozás a Laptop Kéz Kontrollerhez
-  connectToLaptopController(code) {
-    if (typeof window.Peer === 'undefined') {
-      alert('⏳ Hálózati modul betöltése, próbáld újra pár másodperc múlva!');
-      return;
-    }
-
-    try {
-      if (this.remotePeer) {
-        try { this.remotePeer.destroy(); } catch (e) {}
-      }
-
-      this.remotePeer = new window.Peer({ debug: 1 });
-
-      this.remotePeer.on('open', () => {
-        const targetId = `siege-laptop-${code}`;
-        console.log('Telefon Peer kész, csatlakozás a laptophoz:', targetId);
-        const conn = this.remotePeer.connect(targetId, { reliable: false }); // Unreliable: ultra-alacsony késleltetésű UDP WebRTC csatorna!
-
-        conn.on('open', () => {
-          console.log('P2P WebRTC kapcsolat létrejött a laptoppal!');
-          this.remoteConn = conn;
-          if (this.qrScannerStatus) {
-            this.qrScannerStatus.innerHTML = '🟢 <strong style="color:#4ade80;">Laptop csatlakoztatva!</strong><br>Nyomd meg az indítás gombot:';
-          }
-          const startBtn = document.getElementById('btn-start-remote-game');
-          const manualRow = document.querySelector('.qr-manual-row');
-          if (manualRow) manualRow.classList.add('hidden');
-          if (startBtn && !this.isInGame) {
-            startBtn.classList.remove('hidden');
-          }
-          // Automatikus indítás 450ms után, vagy a gomb megnyomásával azonnal
-          setTimeout(() => {
-            if (!this.isInGame) {
-              this.closeQRScanner();
-              this.launchGame('REMOTE_HAND');
-            }
-          }, 450);
-        });
-
-        conn.on('data', (data) => {
-          this.handleRemoteHandData(data);
-        });
-
-        conn.on('close', () => {
-          console.log('Laptop kapcsolat megszakadt');
-          if (this.handStatusLabel) this.handStatusLabel.innerText = '🔴 Laptop lekapcsolódott';
-        });
-
-        conn.on('error', (err) => {
-          console.warn('Kapcsolódási hiba a laptoppal:', err);
-          alert('Nem található laptop ezzel a kóddal. Nyitva van a laptopon a kontroller?');
-        });
-      });
-
-      this.remotePeer.on('error', (err) => {
-        console.warn('Telefon Peer hiba:', err);
-        alert('Hálózati hiba a laptophoz csatlakozáskor.');
-      });
-    } catch (e) {
-      console.error('Váratlan hiba:', e);
-    }
-  }
-
-  // A laptopról érkező 60 FPS kéz-delta adatok feldolgozása (ZÉRÓ telefonos AI-terhelés!)
-  handleRemoteHandData(data) {
-    if (!this.isInGame || this.controlMode !== 'REMOTE_HAND') return;
-
-    // Ping visszaküldése a laptopnak (késleltetés-méréshez)
-    if (data.type === 'PING') {
-      if (this.remoteConn && this.remoteConn.open) {
-        this.remoteConn.send({ type: 'PONG', t: data.t });
-      }
-      return;
-    }
-
-    if (data.type === 'PINCH_START') {
-      this.slingshot.beginAim();
-      if (this.handStatusLabel) this.handStatusLabel.innerText = '✊ Csippentve (Laptop)';
-      if (navigator.vibrate) navigator.vibrate(25);
-    } else if (data.type === 'PINCH_MOVE') {
-      const delta = data.delta || {};
-      const pullX = delta.x || 0;
-      const pullY = delta.y || 0;
-      const pullZ = delta.z || 0.005;
-
-      this.slingshot.setPull(pullX, pullY, pullZ);
-    } else if (data.type === 'PINCH_END') {
-      this.slingshot.endAim(data.fire !== false);
-      if (this.handStatusLabel) this.handStatusLabel.innerText = '🖐️ Kéz (Laptop)';
-      if (data.fire && navigator.vibrate) navigator.vibrate([30, 40, 50]);
-    }
   }
 
   onWindowResize() {
@@ -1267,99 +1071,121 @@ class WebXRApp {
       }
 
       // WebXR AR Felületkeresés (Hit-Testing) irányított folyamatjelzővel
-      if (this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT') {
-        let hasHit = false;
-        if (this.hitTestSource) {
-          const hitTestResults = frame.getHitTestResults(this.hitTestSource);
+      if (this.hitTestSource && (this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT')) {
+        const hitTestResults = frame.getHitTestResults(this.hitTestSource);
 
-          if (hitTestResults.length > 0) {
-            const hit = hitTestResults[0];
-            const pose = hit.getPose(referenceSpace);
-            if (pose && pose.transform) {
-              const m = pose.transform.matrix;
-              const upY = m[5];
-              const isHorizontal = upY > 0.3 || Math.abs(m[10]) > 0.3;
+        if (hitTestResults.length > 0) {
+          const hit = hitTestResults[0];
+          const pose = hit.getPose(referenceSpace);
+          if (pose && pose.transform) {
+            const m = pose.transform.matrix;
+            const upY = m[5];
+            const isHorizontal = upY > 0.4 || Math.abs(m[10]) > 0.4;
 
-              this.scanner.setPose(m, isHorizontal);
-              hasHit = true;
+            this.scanner.setPose(m, isHorizontal);
+            const scanPos = this.scanner.getPosition(this._scanPos);
+
+            if (this.stage === 'PLACE_CASTLE') {
+              if (isHorizontal) {
+                let moveBonus = 0;
+                if (this._hasLastScanPos) {
+                  const moved = scanPos.distanceTo(this._lastScanPos);
+                  if (moved > 0.002 && moved < 0.12) moveBonus = moved * 1.4;
+                }
+                this._lastScanPos.copy(scanPos);
+                this._hasLastScanPos = true;
+
+                if (this.scanProgress < 1) {
+                  this.scanProgress = Math.min(1, this.scanProgress + dt * 0.85 + moveBonus);
+                  this.scanner.setProgress(this.scanProgress);
+                }
+
+                const pct = Math.round(this.scanProgress * 100);
+                if (this.scanProgress >= 1) {
+                  if (!this.isSurfaceLocked) {
+                    this.isSurfaceLocked = true;
+                    this.scanner.triggerLockAnimation();
+                    this.updateFooterButtons('PLACE_CASTLE');
+                  }
+                  const yaw = Math.atan2(this.camera.position.x - scanPos.x, this.camera.position.z - scanPos.z);
+                  this.castle.showGhost(scanPos, null, yaw);
+                  this.updateScanHUD(
+                    '1/2 · VÁR HELYE',
+                    100,
+                    '✅ Asztal bemérve (100%) — Kész a lerakásra!',
+                    'Koppints a képernyőre vagy nyomd meg a „Vár lerakása” gombot!',
+                    'locked'
+                  );
+                } else {
+                  this.castle.hideGhost();
+                  this.updateScanHUD(
+                    '1/2 · VÁR HELYE',
+                    pct,
+                    `📡 Felület bemérése folyamatban... (${pct}%)`,
+                    'Tartsd a kamerát az asztalon és mozgasd lassan a 100%-hoz!',
+                    'scanning'
+                  );
+                }
+              } else {
+                this.castle.hideGhost();
+                this.updateScanHUD(
+                  '1/2 · VÁR HELYE',
+                  this.scanProgress * 100,
+                  '⚠️ Függőleges vagy ferde felület',
+                  'Vízszintes asztalt vagy padlót pásztázz a vár felépítéséhez!',
+                  'warning'
+                );
+              }
+            } else if (this.stage === 'PLACE_SLINGSHOT') {
+              const distCm = Math.round(scanPos.distanceTo(this.castleWorldPos) * 100);
+              const isValid = distCm >= 18;
+              this.slingshot.updateGhost(scanPos, this.castleWorldPos, isValid);
+              this.scanner.updateTether(this.castleWorldPos, scanPos, true, isValid);
+
+              if (!isValid) {
+                this.updateScanHUD(
+                  '2/2 · CSÚZLI HELYE',
+                  100,
+                  `⚠️ Túl közel a várhoz (${distCm} cm — min. 18 cm kell)`,
+                  'Célozz távolabb a vártól (ideális: 35–50 cm), vagy bökj az Auto csúzlira!',
+                  'warning'
+                );
+              } else {
+                this.updateScanHUD(
+                  '2/2 · CSÚZLI HELYE',
+                  100,
+                  `✅ Csúzli helye ideális (${distCm} cm)`,
+                  'Koppints a lerakáshoz, vagy használd az „Auto csúzli” gombot!',
+                  'locked'
+                );
+              }
             }
           }
-        }
-
-        // Ha a WebXR ARCore még nem talált síkot a szobában, a kamera elé vetítünk célzót az asztalra
-        if (!hasHit && (!this.scanner.hasPose || this.scanner.isPoseExpired(600))) {
-          const camPos = this.camera.position;
-          const dir = this._tempDir.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-          const estPos = this._tempVecA.copy(camPos).addScaledVector(dir, 0.55);
-          estPos.y = -0.16;
-          this.scanner.setPositionDirect(estPos);
-        }
-
-        const scanPos = this.scanner.getPosition(this._scanPos);
-
-        if (this.stage === 'PLACE_CASTLE') {
-          let moveBonus = 0;
-          if (this._hasLastScanPos) {
-            const moved = scanPos.distanceTo(this._lastScanPos);
-            if (moved > 0.001 && moved < 0.15) moveBonus = moved * 1.5;
-          }
-          this._lastScanPos.copy(scanPos);
-          this._hasLastScanPos = true;
-
-          // Aktív és garantált bemérés (0% -> 100%)
-          if (this.scanProgress < 1) {
-            this.scanProgress = Math.min(1, this.scanProgress + dt * 0.75 + moveBonus);
+        } else if (this.scanner.isPoseExpired(450)) {
+          this.scanner.hide();
+          this.castle.hideGhost();
+          if (this.stage === 'PLACE_CASTLE') {
+            this.scanProgress = Math.max(0, this.scanProgress - dt * 0.25);
             this.scanner.setProgress(this.scanProgress);
-          }
-
-          const pct = Math.round(this.scanProgress * 100);
-          if (this.scanProgress >= 1) {
-            if (!this.isSurfaceLocked) {
-              this.isSurfaceLocked = true;
-              this.scanner.triggerLockAnimation();
-              this.sounds.playBuild();
+            if (this.isSurfaceLocked && this.scanProgress < 1) {
+              this.isSurfaceLocked = false;
               this.updateFooterButtons('PLACE_CASTLE');
             }
-            const yaw = Math.atan2(this.camera.position.x - scanPos.x, this.camera.position.z - scanPos.z);
-            this.castle.showGhost(scanPos, null, yaw);
             this.updateScanHUD(
               '1/2 · VÁR HELYE',
-              100,
-              '✅ Asztal bemérve (100%) — Kész a lerakásra!',
-              'Koppints a képernyőre vagy a „Vár lerakása” gombra!',
-              'locked'
-            );
-          } else {
-            this.castle.hideGhost();
-            this.updateScanHUD(
-              '1/2 · VÁR HELYE',
-              pct,
-              `📡 Felület bemérése folyamatban... (${pct}%)`,
-              'Mozgasd lassan a telefont az asztal felett a 100%-hoz!',
+              this.scanProgress * 100,
+              'Vízszintes felület keresése...',
+              'Irányítsd a kamerát lefelé egy asztalra vagy a padlóra, és mozgasd lassan!',
               'scanning'
             );
-          }
-        } else if (this.stage === 'PLACE_SLINGSHOT') {
-          const distCm = Math.round(scanPos.distanceTo(this.castleWorldPos) * 100);
-          const isValid = distCm >= 18;
-          this.slingshot.updateGhost(scanPos, this.castleWorldPos, isValid);
-          this.scanner.updateTether(this.castleWorldPos, scanPos, true, isValid);
-
-          if (!isValid) {
-            this.updateScanHUD(
-              '2/2 · CSÚZLI HELYE',
-              100,
-              `⚠️ Túl közel a várhoz (${distCm} cm — min. 18 cm kell)`,
-              'Célozz távolabb a vártól (ideális: 35–50 cm), vagy bökj az Auto csúzlira!',
-              'warning'
-            );
           } else {
+            this.scanner.updateTether(null, null, false);
             this.updateScanHUD(
               '2/2 · CSÚZLI HELYE',
               100,
-              `✅ Csúzli helye ideális (${distCm} cm)`,
-              'Koppints a lerakáshoz, vagy használd az „Auto csúzli” gombot!',
-              'locked'
+              'Célozz az asztalra a csúzli lerakásához...',
+              'Irányítsd a kamerát a vár előtti szabad területre, vagy bökj az Auto csúzlira!',
+              'scanning'
             );
           }
         }
@@ -1370,43 +1196,55 @@ class WebXRApp {
         this.handTracker.updateXRHand(frame, referenceSpace);
       }
     } else if (this.isFallbackAR) {
+      // Fallback kamera módban irányított szkennelés dőlésszög-ellenőrzéssel
       if (this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT') {
         const dir = this._tempDir.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
         const dist = (this.stage === 'PLACE_CASTLE') ? 0.58 : 0.38;
         const ghostPos = this._tempVecA.copy(this.camera.position).addScaledVector(dir, dist);
         ghostPos.y = -0.15;
+        const isPointingDown = dir.y < -0.05;
         this.scanner.setPositionDirect(ghostPos);
 
         if (this.stage === 'PLACE_CASTLE') {
-          if (this.scanProgress < 1) {
-            this.scanProgress = Math.min(1, this.scanProgress + dt * 0.9);
-            this.scanner.setProgress(this.scanProgress);
-          }
-          if (this.scanProgress >= 1) {
-            if (!this.isSurfaceLocked) {
-              this.isSurfaceLocked = true;
-              this.scanner.triggerLockAnimation();
-              this.sounds.playBuild();
-              this.updateFooterButtons('PLACE_CASTLE');
+          if (isPointingDown) {
+            if (this.scanProgress < 1) {
+              this.scanProgress = Math.min(1, this.scanProgress + dt * 0.9);
+              this.scanner.setProgress(this.scanProgress);
             }
-            const yaw = Math.atan2(this.camera.position.x - ghostPos.x, this.camera.position.z - ghostPos.z);
-            this.castle.showGhost(ghostPos, null, yaw);
-            this.updateScanHUD(
-              '1/2 · VÁR HELYE',
-              100,
-              '✅ Célpont bemérve (100%) — Kész a lerakásra!',
-              'Koppints a képernyőre vagy nyomd meg a „Vár lerakása” gombot!',
-              'locked'
-            );
+            if (this.scanProgress >= 1) {
+              if (!this.isSurfaceLocked) {
+                this.isSurfaceLocked = true;
+                this.scanner.triggerLockAnimation();
+                this.updateFooterButtons('PLACE_CASTLE');
+              }
+              const yaw = Math.atan2(this.camera.position.x - ghostPos.x, this.camera.position.z - ghostPos.z);
+              this.castle.showGhost(ghostPos, null, yaw);
+              this.updateScanHUD(
+                '1/2 · VÁR HELYE',
+                100,
+                '✅ Célpont bemérve (100%) — Kész a lerakásra!',
+                'Koppints a képernyőre vagy nyomd meg a „Vár lerakása” gombot!',
+                'locked'
+              );
+            } else {
+              const pct = Math.round(this.scanProgress * 100);
+              this.castle.hideGhost();
+              this.updateScanHUD(
+                '1/2 · VÁR HELYE',
+                pct,
+                `📡 Felület bemérése folyamatban... (${pct}%)`,
+                'Tartsd a kamerát enyhén lefelé az asztal felé!',
+                'scanning'
+              );
+            }
           } else {
-            const pct = Math.round(this.scanProgress * 100);
             this.castle.hideGhost();
             this.updateScanHUD(
               '1/2 · VÁR HELYE',
-              pct,
-              `📡 Felület bemérése folyamatban... (${pct}%)`,
-              'Tartsd a telefont a felület felé!',
-              'scanning'
+              this.scanProgress * 100,
+              'Döntsd lejjebb a kamerát az asztal felé!',
+              'Irányítsd a kamerát egy vízszintes felületre (asztal / padló)!',
+              'warning'
             );
           }
         } else if (this.stage === 'PLACE_SLINGSHOT') {
@@ -1418,8 +1256,8 @@ class WebXRApp {
           this.updateScanHUD(
             '2/2 · CSÚZLI HELYE',
             100,
-            isValid ? `✅ Csúzli helye ideális (${distCm} cm)` : `⚠️ Túl közel a várhoz (${distCm} cm)`,
-            isValid ? 'Koppints a lerakáshoz vagy nyomd meg az Auto csúzlit!' : 'Célozz távolabb a vártól!',
+            isValid ? `✅ Csúzli helye ideális (${distCm} cm)` : `⚠️ Túl közel a várhoz (${distCm} cm — min. 18 cm kell)`,
+            isValid ? 'Koppints a lerakáshoz vagy nyomd meg az Auto csúzlit!' : 'Célozz távolabb a vártól (ideális: 35–50 cm)!',
             isValid ? 'locked' : 'warning'
           );
         }
