@@ -135,14 +135,17 @@ initPeer();
 let hands = null;
 let camera = null;
 let isPinching = false;
-let pinchAnchor = { x: 0, y: 0, z: 0 };
+let pinchAnchor = { x: 0.5, y: 0.5, z: 0 };
+let pinchAnchorScale = 0.22;
 let smoothedMid = { x: 0.5, y: 0.5, z: 0 };
 let pinchLostAt = 0;
-const PINCH_HOLD_GRACE_MS = 180; // Auto-Hold (Coyote-time)
+const PINCH_HOLD_GRACE_MS = 140; // Auto-Hold (Coyote-time)
 
-const filterX = new OneEuroFilter1D(1.1, 0.05, 1.0);
-const filterY = new OneEuroFilter1D(1.1, 0.05, 1.0);
-const filterZ = new OneEuroFilter1D(1.0, 0.04, 1.0);
+// Finoman hangolt 1€ Filter: álló helyzetben (célzáskor) 100% rezgésmentes, gyors mozgáskor 0 ms késleltetés
+const filterX = new OneEuroFilter1D(0.70, 0.08, 1.0);
+const filterY = new OneEuroFilter1D(0.70, 0.08, 1.0);
+const filterZ = new OneEuroFilter1D(0.65, 0.08, 1.0);
+const filterScale = new OneEuroFilter1D(0.50, 0.06, 1.0);
 
 function initMediaPipe() {
   hands = new window.Hands({
@@ -153,8 +156,8 @@ function initMediaPipe() {
   hands.setOptions({
     maxNumHands: 1,
     modelComplexity: 1,
-    minDetectionConfidence: 0.7,
-    minTrackingConfidence: 0.7
+    minDetectionConfidence: 0.65,
+    minTrackingConfidence: 0.65
   });
 
   hands.onResults(onResults);
@@ -202,85 +205,102 @@ function onResults(results) {
 
   const landmarks = results.multiHandLandmarks[0];
   const wrist = landmarks[0];
+  const thumbTip = landmarks[4];
+  const indexTip = landmarks[8];
+  const indexDip = landmarks[7];
+  const middleTip = landmarks[12];
   const middleMcp = landmarks[9];
-  const thumb = landmarks[4];
-  const index = landmarks[8];
-  const middle = landmarks[12];
 
-  // Skálafüggetlen többujjas csippentés mérése
-  const handScale = Math.hypot(wrist.x - middleMcp.x, wrist.y - middleMcp.y) || 0.22;
-  const dThumbIndex = Math.hypot(thumb.x - index.x, thumb.y - index.y);
-  const dThumbMiddle = middle ? Math.hypot(thumb.x - middle.x, thumb.y - middle.y) : 99;
-  const pinchDist = Math.min(dThumbIndex, dThumbMiddle);
+  // Tenyér alapmérete normalizáláshoz
+  const rawHandScale = Math.hypot(wrist.x - middleMcp.x, wrist.y - middleMcp.y) || 0.22;
+  const handScale = filterScale.filter(rawHandScale, now);
 
-  const rawX = (thumb.x + index.x) * 0.5;
-  const rawY = (thumb.y + index.y) * 0.5;
-  const rawZ = (thumb.z + index.z) * 0.5;
+  // Kiterjesztett, szögfüggetlen csippentésmérés:
+  // Hüvelykujj távolsága a mutatóujj hegyéhez, felső ízületéhez (DIP), vagy középső ujjhoz
+  const dThumbIndexTip = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+  const dThumbIndexDip = Math.hypot(thumbTip.x - indexDip.x, thumbTip.y - indexDip.y);
+  const dThumbMiddleTip = middleTip ? Math.hypot(thumbTip.x - middleTip.x, thumbTip.y - middleTip.y) : 99;
+  const pinchDist = Math.min(dThumbIndexTip, dThumbIndexDip * 1.08, dThumbMiddleTip);
 
-  // 1€ Filter a tökéletesen sima, remegésmentes és késleltetésmentes követéshez
+  const rawX = (thumbTip.x + indexTip.x) * 0.5;
+  const rawY = (thumbTip.y + indexTip.y) * 0.5;
+  const rawZ = (thumbTip.z + indexTip.z) * 0.5;
+
   smoothedMid.x = filterX.filter(rawX, now);
   smoothedMid.y = filterY.filter(rawY, now);
   smoothedMid.z = filterZ.filter(rawZ, now);
 
-  const pinchRatio = pinchDist / handScale;
-  const isCurrentlyPinched = isPinching ? pinchRatio < 0.46 : pinchRatio < 0.35;
+  const pinchRatio = pinchDist / Math.max(0.10, handScale);
+  
+  // Hysterézis a biztos fogáshoz és pontos kilövéshez:
+  // Csippentés aktiválása: < 0.38
+  // Csippentés megtartása hátrahúzás közben: < 0.54 (nem old ki véletlenül!)
+  const isCurrentlyPinched = isPinching ? pinchRatio < 0.54 : pinchRatio < 0.38;
 
-  // Teljes 3D csontváz és célzó kirajzolása
-  drawCyberSkeleton(landmarks, isCurrentlyPinched, thumb, index);
+  // Teljes 3D csontváz, célzókereszt és rugalmas feszítésvonal kirajzolása
+  drawCyberSkeleton(landmarks, isCurrentlyPinched, thumbTip, indexTip, pinchAnchor, isPinching, smoothedMid);
 
   if (isCurrentlyPinched) {
     pinchLostAt = 0;
     if (!isPinching) {
       isPinching = true;
       pinchAnchor = { ...smoothedMid };
-      hudText.innerText = '✊ CSIPPENTVE! Húzd hátra a kezed a feszítéshez!';
+      pinchAnchorScale = handScale;
+      hudText.innerText = '✊ CSIPPENTVE! Húzd hátra vagy lefelé a kezed a feszítéshez!';
       sendToPhone({ type: 'PINCH_START', anchor: pinchAnchor });
     } else {
-      // Érzékeny, dinamikus feszítési vektor számítása
-      const deltaX = (pinchAnchor.x - smoothedMid.x) * 3.0;
-      const deltaY = (smoothedMid.y - pinchAnchor.y) * 3.0;
-      const deltaZ = (pinchAnchor.z - smoothedMid.z) * 3.8;
+      // Hibrid Z-mélység:
+      // 1. A kéz látszólagos méretének csökkenése a kamera felől távolodva:
+      const scaleShrink = (pinchAnchorScale - handScale) / Math.max(0.08, pinchAnchorScale);
+      // 2. Relatív Z-mélység változás a MediaPipe-ból:
+      const relativeZ = (pinchAnchor.z - smoothedMid.z);
+      // 3. Függőleges lefelé húzás (természetes csúzli mozdulat):
+      const downwardPull = (smoothedMid.y - pinchAnchor.y);
 
-      const tensionPct = Math.round(Math.min(100, Math.max(0, (deltaZ / 0.15) * 100)));
+      // Súlyozott feszítési erő (0.005 .. 0.150):
+      const rawTension = Math.max(0, scaleShrink * 0.48) + Math.max(0, relativeZ * 0.35) + Math.max(0, downwardPull * 0.25);
+      const pullZ = Math.max(0.005, Math.min(0.150, rawTension));
+
+      // Oldalirányú célzás (X) - tükrözött képernyő korrekció:
+      const deltaX = (smoothedMid.x - pinchAnchor.x);
+      const pullX = Math.max(-0.10, Math.min(0.10, -deltaX * 0.40));
+
+      // Magassági célzás (Y):
+      const deltaY = (pinchAnchor.y - smoothedMid.y);
+      const pullY = Math.max(-0.08, Math.min(0.08, -deltaY * 0.35));
+
+      const tensionPct = Math.round(Math.min(100, Math.max(0, (pullZ / 0.12) * 100)));
       if (tensionBar) tensionBar.style.width = `${tensionPct}%`;
 
-      hudText.innerText = `✊ Feszítés: ${tensionPct}% ERŐ | Z: ${deltaZ.toFixed(2)} | X: ${deltaX.toFixed(2)}`;
-      sendToPhone({ type: 'PINCH_MOVE', delta: { x: deltaX, y: deltaY, z: deltaZ } });
+      hudText.innerText = `✊ Feszítés: ${tensionPct}% ERŐ | 🎯 Célzás aktív`;
+      sendToPhone({ 
+        type: 'PINCH_MOVE', 
+        delta: { x: pullX, y: pullY, z: pullZ, power: tensionPct } 
+      });
     }
   } else if (isPinching) {
-    // Enyhe szétnyílásnál türelmi idő, határozott elengedésnél azonnali kilövés
-    if (pinchRatio < 0.55) {
-      if (pinchLostAt === 0) pinchLostAt = now;
-      else if (now - pinchLostAt >= 110) {
-        isPinching = false;
-        pinchLostAt = 0;
-        if (tensionBar) tensionBar.style.width = '0%';
-        hudText.innerText = '🚀 KILŐVE!';
-        sendToPhone({ type: 'PINCH_END', fire: true });
-      }
-    } else {
-      isPinching = false;
-      pinchLostAt = 0;
-      if (tensionBar) tensionBar.style.width = '0%';
-      hudText.innerText = '🚀 KILŐVE!';
-      sendToPhone({ type: 'PINCH_END', fire: true });
-    }
+    // Határozott elengedés: azonnali kilövés!
+    isPinching = false;
+    pinchLostAt = 0;
+    if (tensionBar) tensionBar.style.width = '0%';
+    hudText.innerText = '🚀 KILŐVE!';
+    sendToPhone({ type: 'PINCH_END', fire: true });
   } else {
-    hudText.innerText = '🖐️ Kéz követve — Csippents a mutató- és hüvelykujjaddal!';
+    hudText.innerText = '🖐️ Kéz követve — Csippents a hüvelyk- és mutatóujjaddal!';
     if (tensionBar) tensionBar.style.width = '0%';
   }
 
   ctx.restore();
 }
 
-// Sci-fi stílusú kibernetikus csontváz kirajzoló
-function drawCyberSkeleton(landmarks, isPinched, thumb, index) {
+// Sci-fi stílusú kibernetikus csontváz és AR célzó HUD
+function drawCyberSkeleton(landmarks, isPinched, thumb, index, anchor, inPinchMode, currentMid) {
   const w = canvasEl.width;
   const h = canvasEl.height;
 
-  // Csontok kirajzolása neon kék / arany vonalakkal
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = isPinched ? 'rgba(245, 158, 11, 0.7)' : 'rgba(56, 189, 248, 0.6)';
+  // 1. Csontok kirajzolása (cián kék nyugalomban, arany feszítéskor)
+  ctx.lineWidth = isPinched ? 3 : 2;
+  ctx.strokeStyle = isPinched ? 'rgba(251, 191, 36, 0.85)' : 'rgba(56, 189, 248, 0.65)';
   ctx.beginPath();
   for (const [start, end] of HAND_CONNECTIONS) {
     const p1 = landmarks[start];
@@ -290,8 +310,8 @@ function drawCyberSkeleton(landmarks, isPinched, thumb, index) {
   }
   ctx.stroke();
 
-  // Ízületi pontok
-  ctx.fillStyle = isPinched ? '#f59e0b' : '#38bdf8';
+  // 2. Ízületi pontok
+  ctx.fillStyle = isPinched ? '#fbbf24' : '#38bdf8';
   for (let i = 0; i < landmarks.length; i++) {
     if (i === 4 || i === 8) continue;
     const pt = landmarks[i];
@@ -300,7 +320,7 @@ function drawCyberSkeleton(landmarks, isPinched, thumb, index) {
     ctx.fill();
   }
 
-  // Csippentő ujjvégek kiemelése
+  // 3. Ujjvégek pozíciói
   const tx = thumb.x * w;
   const ty = thumb.y * h;
   const ix = index.x * w;
@@ -308,21 +328,50 @@ function drawCyberSkeleton(landmarks, isPinched, thumb, index) {
   const mx = (tx + ix) * 0.5;
   const my = (ty + iy) * 0.5;
 
-  ctx.strokeStyle = isPinched ? '#ef4444' : '#22c55e';
-  ctx.lineWidth = 3;
+  // 4. Ha csippentve van: Rugalmas virtuális feszítőgumik & rögzítési célzókereszt
+  if (inPinchMode && anchor) {
+    const ax = anchor.x * w;
+    const ay = anchor.y * h;
 
+    // Feszítésvonal (gumiszalag) a rögzítési pont és a kéz között
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(mx, my);
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 4;
+    ctx.shadowColor = '#ef4444';
+    ctx.shadowBlur = 10;
+    ctx.stroke();
+
+    // Rögzítési pont célzókereszt
+    ctx.beginPath();
+    ctx.arc(ax, ay, 12, 0, Math.PI * 2);
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(ax - 16, ay); ctx.lineTo(ax + 16, ay);
+    ctx.moveTo(ax, ay - 16); ctx.lineTo(ax, ay + 16);
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 5. Csippentő ujjvégek kiemelése
   ctx.beginPath();
-  ctx.arc(tx, ty, isPinched ? 10 : 7, 0, Math.PI * 2);
-  ctx.arc(ix, iy, isPinched ? 10 : 7, 0, Math.PI * 2);
+  ctx.arc(tx, ty, isPinched ? 9 : 7, 0, Math.PI * 2);
+  ctx.arc(ix, iy, isPinched ? 9 : 7, 0, Math.PI * 2);
   ctx.fillStyle = isPinched ? '#ef4444' : '#22c55e';
   ctx.fill();
-  ctx.stroke();
 
-  // Célzó kör a két ujj között
+  // 6. Célzó energiagyűrű a két ujj között
   ctx.beginPath();
-  ctx.arc(mx, my, isPinched ? 16 : 10, 0, Math.PI * 2);
+  ctx.arc(mx, my, isPinched ? 14 : 9, 0, Math.PI * 2);
   ctx.strokeStyle = isPinched ? '#fbbf24' : '#06b6d4';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.5;
   ctx.stroke();
 }
 
