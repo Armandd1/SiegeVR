@@ -615,25 +615,14 @@ class WebXRApp {
     const isBattle = stage === 'BATTLE';
 
     if (this.btnPlaceConfirm) {
-      this.btnPlaceConfirm.classList.toggle('hidden', isBattle);
+      // Csak akkor jelenik meg a vár lerakása gomb, ha a felület 100%-ban be van mérve és rögzítve!
+      this.btnPlaceConfirm.classList.toggle('hidden', isBattle || (isCastle && !this.isSurfaceLocked));
       const labelEl = this.btnPlaceConfirm.querySelector('.btn-text');
       const iconEl = this.btnPlaceConfirm.querySelector('.btn-icon');
       if (isCastle) {
-        if (this.isSurfaceLocked) {
-          this.btnPlaceConfirm.disabled = false;
-          this.btnPlaceConfirm.classList.remove('disabled');
-          if (iconEl) iconEl.innerText = '🏰';
-          if (labelEl) labelEl.innerText = 'Vár lerakása';
-        } else {
-          this.btnPlaceConfirm.disabled = true;
-          this.btnPlaceConfirm.classList.add('disabled');
-          const pct = Math.round(this.scanProgress * 100);
-          if (iconEl) iconEl.innerText = '⏳';
-          if (labelEl) labelEl.innerText = `Pásztázás: ${pct}%`;
-        }
+        if (iconEl) iconEl.innerText = '🏰';
+        if (labelEl) labelEl.innerText = 'Vár lerakása';
       } else if (isSlingshot) {
-        this.btnPlaceConfirm.disabled = false;
-        this.btnPlaceConfirm.classList.remove('disabled');
         if (iconEl) iconEl.innerText = '🎯';
         if (labelEl) labelEl.innerText = 'Csúzli lerakása';
       }
@@ -1264,6 +1253,7 @@ class WebXRApp {
         this.isXRActive = true;
         document.body.classList.add('xr-active');
         if (this.arStepper) this.arStepper.classList.remove('hidden');
+        this.startPlacement(1);
       }
 
       if (!this.hitTestSourceRequested && (this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT')) {
@@ -1288,7 +1278,7 @@ class WebXRApp {
             if (pose && pose.transform) {
               const m = pose.transform.matrix;
               const upY = m[5];
-              const isHorizontal = upY > 0.25 || Math.abs(m[10]) > 0.25;
+              const isHorizontal = upY > 0.3 || Math.abs(m[10]) > 0.3;
 
               this.scanner.setPose(m, isHorizontal);
               hasHit = true;
@@ -1296,26 +1286,33 @@ class WebXRApp {
           }
         }
 
-        // Ha az ARCore még keresi a síkot, azonnal kivetítjük a célzót a kamera elé
+        // Ha a WebXR ARCore még nem talált síkot a szobában, a kamera elé vetítünk célzót az asztalra
         if (!hasHit && (!this.scanner.hasPose || this.scanner.isPoseExpired(600))) {
           const camPos = this.camera.position;
           const dir = this._tempDir.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
           const estPos = this._tempVecA.copy(camPos).addScaledVector(dir, 0.55);
-          estPos.y = Math.min(camPos.y - 0.20, -0.18);
+          estPos.y = -0.16;
           this.scanner.setPositionDirect(estPos);
         }
 
         const scanPos = this.scanner.getPosition(this._scanPos);
 
         if (this.stage === 'PLACE_CASTLE') {
-          // Aktív felületpásztázás: 0% -> 100% (~2 másodperc alatt)
+          let moveBonus = 0;
+          if (this._hasLastScanPos) {
+            const moved = scanPos.distanceTo(this._lastScanPos);
+            if (moved > 0.001 && moved < 0.15) moveBonus = moved * 1.5;
+          }
+          this._lastScanPos.copy(scanPos);
+          this._hasLastScanPos = true;
+
+          // Aktív és garantált bemérés (0% -> 100%)
           if (this.scanProgress < 1) {
-            this.scanProgress = Math.min(1, this.scanProgress + dt * 0.50);
+            this.scanProgress = Math.min(1, this.scanProgress + dt * 0.75 + moveBonus);
             this.scanner.setProgress(this.scanProgress);
           }
 
           const pct = Math.round(this.scanProgress * 100);
-
           if (this.scanProgress >= 1) {
             if (!this.isSurfaceLocked) {
               this.isSurfaceLocked = true;
@@ -1328,7 +1325,7 @@ class WebXRApp {
             this.updateScanHUD(
               '1/2 · VÁR HELYE',
               100,
-              '✅ Asztal beszkennelve — Kész a lerakásra!',
+              '✅ Asztal bemérve (100%) — Kész a lerakásra!',
               'Koppints a képernyőre vagy a „Vár lerakása” gombra!',
               'locked'
             );
@@ -1338,13 +1335,9 @@ class WebXRApp {
               '1/2 · VÁR HELYE',
               pct,
               `📡 Felület bemérése folyamatban... (${pct}%)`,
-              'Mozgasd lassan a telefont a felület felett!',
+              'Mozgasd lassan a telefont az asztal felett a 100%-hoz!',
               'scanning'
             );
-            if (this.btnPlaceConfirm) {
-              const labelEl = this.btnPlaceConfirm.querySelector('.btn-text');
-              if (labelEl) labelEl.innerText = `Pásztázás: ${pct}%`;
-            }
           }
         } else if (this.stage === 'PLACE_SLINGSHOT') {
           const distCm = Math.round(scanPos.distanceTo(this.castleWorldPos) * 100);
@@ -1377,21 +1370,18 @@ class WebXRApp {
         this.handTracker.updateXRHand(frame, referenceSpace);
       }
     } else if (this.isFallbackAR) {
-      // Fallback kamera módban automatikus stabil szkennelés és elhelyezés
       if (this.stage === 'PLACE_CASTLE' || this.stage === 'PLACE_SLINGSHOT') {
         const dir = this._tempDir.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-        const dist = (this.stage === 'PLACE_CASTLE') ? 0.55 : 0.40;
+        const dist = (this.stage === 'PLACE_CASTLE') ? 0.58 : 0.38;
         const ghostPos = this._tempVecA.copy(this.camera.position).addScaledVector(dir, dist);
-        ghostPos.y = -0.18;
+        ghostPos.y = -0.15;
         this.scanner.setPositionDirect(ghostPos);
 
         if (this.stage === 'PLACE_CASTLE') {
           if (this.scanProgress < 1) {
-            this.scanProgress = Math.min(1, this.scanProgress + dt * 0.50);
+            this.scanProgress = Math.min(1, this.scanProgress + dt * 0.9);
             this.scanner.setProgress(this.scanProgress);
           }
-          const pct = Math.round(this.scanProgress * 100);
-
           if (this.scanProgress >= 1) {
             if (!this.isSurfaceLocked) {
               this.isSurfaceLocked = true;
@@ -1404,23 +1394,20 @@ class WebXRApp {
             this.updateScanHUD(
               '1/2 · VÁR HELYE',
               100,
-              '✅ Asztal beszkennelve — Kész a lerakásra!',
-              'Koppints a képernyőre vagy a „Vár lerakása” gombra!',
+              '✅ Célpont bemérve (100%) — Kész a lerakásra!',
+              'Koppints a képernyőre vagy nyomd meg a „Vár lerakása” gombot!',
               'locked'
             );
           } else {
+            const pct = Math.round(this.scanProgress * 100);
             this.castle.hideGhost();
             this.updateScanHUD(
               '1/2 · VÁR HELYE',
               pct,
               `📡 Felület bemérése folyamatban... (${pct}%)`,
-              'Irányítsd az asztal felé a telefont!',
+              'Tartsd a telefont a felület felé!',
               'scanning'
             );
-            if (this.btnPlaceConfirm) {
-              const labelEl = this.btnPlaceConfirm.querySelector('.btn-text');
-              if (labelEl) labelEl.innerText = `Pásztázás: ${pct}%`;
-            }
           }
         } else if (this.stage === 'PLACE_SLINGSHOT') {
           const distCm = Math.round(ghostPos.distanceTo(this.castleWorldPos) * 100);
